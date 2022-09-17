@@ -15,18 +15,36 @@
  */
 
 use libc;
+use seccompiler::{
+    apply_filter, BackendError, BpfProgram, SeccompAction as Action, SeccompCmpArgLen as ArgLen,
+    SeccompCmpOp as CmpOp, SeccompCondition as Cond, SeccompFilter as Filter, SeccompRule as Rule,
+};
 use std::env::consts::ARCH;
-use seccompiler::{SeccompAction, SeccompFilter, Error, BpfProgram, apply_filter};
 
 #[test]
-fn simple() -> Result<(), Error>{
-    let filter = SeccompFilter::new(
-        vec![
-            (libc::SYS_personality, vec![]),
-        ].into_iter().collect(),
-        SeccompAction::Allow,
-        SeccompAction::Errno(1000),
-        ARCH.try_into()?)?;
+fn simple() -> Result<(), BackendError> {
+    // Try then block an innocuous syscall.
+    let ret = unsafe { libc::personality(0xffffffff) };
+    assert!(ret != -1);
+
+    let filter = Filter::new(
+        vec![(
+            libc::SYS_personality,
+            vec![
+                Rule::new(vec![
+                    Cond::new(
+                        0,
+                        ArgLen::Dword,
+                        CmpOp::Eq,
+                        0xffffffff,
+                    )?
+                ])?
+            ],
+        )].into_iter().collect(),
+        Action::Allow,
+        Action::Errno(1000),
+        ARCH.try_into()?,
+    )?;
 
     let bpf_prog: BpfProgram = filter.try_into()?;
     apply_filter(&bpf_prog).unwrap();
