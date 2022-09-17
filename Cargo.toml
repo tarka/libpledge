@@ -1,0 +1,11 @@
+[package]
+name = "oath"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+seccompiler = "0.3.0"
+
+[dev-dependencies]
+libc = "0.2.132"
+
