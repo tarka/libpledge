@@ -14,11 +14,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::env::consts::ARCH;
-use std::thread;
-
 use libc;
-
+use std::env::consts::ARCH;
 use seccompiler::{SeccompAction, SeccompFilter, Error, BpfProgram, apply_filter};
 
 #[test]
@@ -32,21 +29,14 @@ fn simple() -> Result<(), Error>{
         ARCH.try_into()?)?;
 
     let bpf_prog: BpfProgram = filter.try_into()?;
+    apply_filter(&bpf_prog).unwrap();
 
-    let returned_errno = thread::spawn(move || {
-        // Install the filter.
-        apply_filter(&bpf_prog).unwrap();
+    let ret = unsafe { libc::personality(0xffffffff) };
+    assert!(ret == -1);
 
-        let ret = unsafe { libc::personality(0xffffffff) };
-        assert!(ret == -1);
+    let errno = std::io::Error::last_os_error().raw_os_error().unwrap();
 
-        // Return errno.
-        std::io::Error::last_os_error().raw_os_error().unwrap()
-    })
-    .join()
-    .unwrap();
-
-    assert!(returned_errno == 1000);
+    assert!(errno == 1000);
 
     Ok(())
 }
