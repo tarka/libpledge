@@ -14,5 +14,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-pub mod errors;
-pub mod promises;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum Error {
+
+}

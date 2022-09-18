@@ -50,10 +50,9 @@ fn simple() -> Result<(), BackendError> {
     apply_filter(&bpf_prog).unwrap();
 
     let ret = unsafe { libc::personality(0xffffffff) };
-    assert!(ret == -1);
-
     let errno = std::io::Error::last_os_error().raw_os_error().unwrap();
 
+    assert!(ret == -1);
     assert!(errno == 1000);
 
     Ok(())

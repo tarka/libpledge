@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 seccompiler = "0.3.0"
+thiserror = "1.0.35"
 
 [dev-dependencies]
 libc = "0.2.132"
