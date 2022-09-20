@@ -15,9 +15,19 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+use std::result;
+use seccompiler::BackendError;
 use thiserror::Error;
+
+use crate::promises::Promise;
+
 
 #[derive(Debug, Error)]
 pub enum Error {
-
+    #[error("Promise {0:?} is not implemented.")]
+    UndefinedPromise(Promise),
+    #[error(transparent)]
+    SeccompErr( #[from] BackendError )
 }
+
+pub type Result<T> = result::Result<T, Error>;
