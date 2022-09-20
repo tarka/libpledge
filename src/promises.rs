@@ -30,7 +30,16 @@ pub enum Promise {
 
 pub enum Filtered {
     Whitelist(libc::c_long),
-    Custom(CustomFragFn),
+    Fcntl_Stdio,
+    Mmap_Noexec,
+    Mprotect_Noexec,
+    Sendto_Addrless,
+    Ioctl_Restrict,
+    Kill_Self,
+    Tkill_Self,
+    Prctl_Stdio,
+    Clone_Thread,
+    Prlimit64_Stdio,
 }
 
 lazy_static! {

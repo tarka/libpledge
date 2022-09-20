@@ -15,33 +15,176 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-use libc;
+use libc::{self, F_DUPFD_CLOEXEC};
 use seccompiler::{
     apply_filter, BackendError, BpfProgram, SeccompAction as Action, SeccompCmpArgLen as ArgLen,
     SeccompCmpOp as CmpOp, SeccompCondition as Cond, SeccompFilter as Filter, SeccompRule as Rule,
 };
 use std::{env::consts::ARCH, io};
-
 use crate::{promises::{Promise, Filtered, PROMISES}, errors::{Result, Error}};
+
 
 pub type WhitelistFrag = (libc::c_long, Vec<Rule>);
 pub type CustomFragFn = fn() -> Result<WhitelistFrag>;
 
 
-fn whitelist(syscal: &libc::c_long) -> Result<WhitelistFrag> {
+fn whitelist_syscall(syscal: &libc::c_long) -> Result<WhitelistFrag> {
     let wl = (
-            libc::SYS_personality,
-            vec![],
-        );
+        libc::SYS_personality,
+        vec![],
+    );
 
     Ok(wl)
+}
+
+// The second argument of fcntl() must be one of:
+//
+//   - F_DUPFD (0)
+//   - F_GETFD (1)
+//   - F_SETFD (2)
+//   - F_GETFL (3)
+//   - F_SETFL (4)
+//   - F_DUPFD_CLOEXEC (1030)
+//
+fn fcntl_stdio() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_fcntl,
+        vec![
+            Rule::new(vec![
+                Cond::new(
+                    1,
+                    ArgLen::Dword,
+                    CmpOp::Le,
+                    4,  // Arg == 0-4
+                )?
+            ])?,
+            Rule::new(vec![
+                Cond::new(
+                    1,
+                    ArgLen::Dword,
+                    CmpOp::Eq,
+                    libc::F_DUPFD_CLOEXEC as u64
+                )?
+            ])?
+        ]
+    );
+    Ok(wl)
+}
+
+
+// The flags parameter of mmap() must not have:
+//
+//   - MAP_LOCKED   (0x02000)
+//   - MAP_NONBLOCK (0x10000)
+//   - MAP_HUGETLB  (0x40000)
+//
+fn mmap_noexec() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_mmap,
+        vec![
+            Rule::new(vec![
+                Cond::new(
+                    3,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(0x52000),
+                    0
+                )?
+            ])?
+        ]
+    );
+    Ok(wl)
+}
+
+
+// The prot parameter of mprotect() may only have:
+//
+//   - PROT_NONE  (0)
+//   - PROT_READ  (1)
+//   - PROT_WRITE (2)
+//
+fn mprotect_noexec() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_mprotect,
+        vec![
+            Rule::new(vec![
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::Le,
+                    2,  // Arg == 0-2
+                )?
+            ])?,
+        ]
+    );
+    Ok(wl)
+}
+
+
+// The sockaddr parameter of sendto() must be
+//
+//   - NULL
+//
+fn sendto_addrless() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_sendto,
+        vec![
+            Rule::new(vec![
+                Cond::new(
+                    4,
+                    ArgLen::Qword,
+                    CmpOp::Eq,
+                    0, // Null sockaddr pointer
+                )?
+            ])?,
+        ]
+    );
+    Ok(wl)
+}
+
+
+fn ioctl_restrict() -> Result<WhitelistFrag> {
+    Ok((0, Vec::new()))  // FIXME
+}
+
+
+fn kill_self() -> Result<WhitelistFrag> {
+    Ok((0, Vec::new()))  // FIXME
+}
+
+
+fn tkill_self() -> Result<WhitelistFrag> {
+    Ok((0, Vec::new()))  // FIXME
+}
+
+
+fn prctl_stdio() -> Result<WhitelistFrag> {
+    Ok((0, Vec::new()))  // FIXME
+}
+
+
+fn clone_thread() -> Result<WhitelistFrag> {
+    Ok((0, Vec::new()))  // FIXME
+}
+
+
+fn prlimit64_stdio() -> Result<WhitelistFrag> {
+    Ok((0, Vec::new()))  // FIXME
 }
 
 
 fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     match filter {
-        Filtered::Whitelist(syscall) => whitelist(syscall),
-        Filtered::Custom(func) => func()
+        Filtered::Whitelist(syscall) => whitelist_syscall(syscall),
+        Filtered::Fcntl_Stdio => fcntl_stdio(),
+        Filtered::Mmap_Noexec => mmap_noexec(),
+        Filtered::Mprotect_Noexec => mprotect_noexec(),
+        Filtered::Sendto_Addrless => sendto_addrless(),
+        Filtered::Ioctl_Restrict => ioctl_restrict(),
+        Filtered::Kill_Self => kill_self(),
+        Filtered::Tkill_Self => tkill_self(),
+        Filtered::Prctl_Stdio => prctl_stdio(),
+        Filtered::Clone_Thread => clone_thread(),
+        Filtered::Prlimit64_Stdio => prlimit64_stdio(),
     }
 }
 
