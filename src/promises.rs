@@ -19,8 +19,6 @@ use lazy_static::lazy_static;
 use libc;
 use std::collections::HashMap;
 
-use crate::seccomp::CustomFragFn;
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub enum Promise {
     Default,

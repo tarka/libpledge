@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-use libc::{self, F_DUPFD_CLOEXEC};
+use libc;
 use seccompiler::{
     apply_filter, BackendError, BpfProgram, SeccompAction as Action, SeccompCmpArgLen as ArgLen,
     SeccompCmpOp as CmpOp, SeccompCondition as Cond, SeccompFilter as Filter, SeccompRule as Rule,
@@ -25,7 +25,6 @@ use crate::{promises::{Promise, Filtered, PROMISES}, errors::{Result, Error}};
 
 
 pub type WhitelistFrag = (libc::c_long, Vec<Rule>);
-pub type CustomFragFn = fn() -> Result<WhitelistFrag>;
 
 
 fn whitelist_syscall(syscal: &libc::c_long) -> Result<WhitelistFrag> {
