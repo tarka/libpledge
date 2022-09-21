@@ -19,3 +19,4 @@ mod errors;
 mod promises;
 mod seccomp;
 
+pub use seccomp::swear;

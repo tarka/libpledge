@@ -28,16 +28,16 @@ pub enum Promise {
 
 pub enum Filtered {
     Whitelist(libc::c_long),
-    Fcntl_Stdio,
-    Mmap_Noexec,
-    Mprotect_Noexec,
-    Sendto_Addrless,
-    Ioctl_Restrict,
-    Kill_Self,
-    Tkill_Self,
-    Prctl_Stdio,
-    Clone_Thread,
-    Prlimit64_Stdio,
+    FcntlStdio,
+    MmapNoexec,
+    MprotectNoexec,
+    SendtoAddrless,
+    IoctlRestrict,
+    KillSelf,
+    TkillSelf,
+    PrctlStdio,
+    CloneThread,
+    Prlimit64Stdio,
 }
 
 lazy_static! {
