@@ -16,7 +16,7 @@
  */
 
 use std::result;
-use seccompiler::BackendError;
+use seccompiler;
 use thiserror::Error;
 
 use crate::promises::Promise;
@@ -27,7 +27,9 @@ pub enum Error {
     #[error("Promise {0:?} is not implemented.")]
     UndefinedPromise(Promise),
     #[error(transparent)]
-    SeccompErr( #[from] BackendError )
+    SysErr( #[from] seccompiler::Error ),
+    #[error(transparent)]
+    SecCompilerErr( #[from] seccompiler::BackendError ),
 }
 
 pub type Result<T> = result::Result<T, Error>;

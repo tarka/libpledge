@@ -17,10 +17,10 @@
 
 use libc;
 use seccompiler::{
-    apply_filter, BackendError, BpfProgram, SeccompAction as Action, SeccompCmpArgLen as ArgLen,
-    SeccompCmpOp as CmpOp, SeccompCondition as Cond, SeccompFilter as Filter, SeccompRule as Rule,
+    apply_filter, BpfProgram, SeccompAction as Action, SeccompCmpArgLen as ArgLen,
+    SeccompCmpOp as CmpOp, SeccompCondition as Cond, SeccompFilter, SeccompRule as Rule,
 };
-use std::{env::consts::ARCH, io, process};
+use std::{env::consts::ARCH, process};
 use crate::{promises::{Promise, Filtered, PROMISES}, errors::{Result, Error}};
 
 
@@ -34,11 +34,6 @@ fn whitelist_syscall(syscall: libc::c_long) -> Result<WhitelistFrag> {
     );
 
     Ok(wl)
-}
-
-
-fn default_filters() -> Result<Vec<WhitelistFrag>> {
-    Ok(vec![ whitelist_syscall(libc::SYS_exit)? ])
 }
 
 
@@ -394,9 +389,12 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
 
 
 pub fn swear(promises: Vec<Promise>) -> Result<()> {
+
     // Convert all promises into filter specs.
     // FIXME: Should we dedup the list here?
-    let filters = promises.into_iter()
+    let defaults = vec![ Promise::Default ];
+    let filters = defaults.into_iter()
+        .chain(promises.into_iter())
         .map(|p| PROMISES.get(&p).ok_or(Error::UndefinedPromise(p)))
         .collect::<Result<Vec<&Vec<Filtered>>>>()?
         .into_iter()
@@ -404,9 +402,19 @@ pub fn swear(promises: Vec<Promise>) -> Result<()> {
         .collect::<Vec<&Filtered>>();
 
     // Filters to seccompiler BPF IR
-    let frags = filters.into_iter()
+    let whitelist = filters.into_iter()
         .map(oath_to_bpf)
         .collect::<Result<Vec<WhitelistFrag>>>()?;
+
+    let sf = SeccompFilter::new(
+        whitelist.into_iter().collect(),
+        Action::Errno(1000),
+        Action::Allow,
+        ARCH.try_into()?
+    )?;
+
+    let bpf_prog: BpfProgram = sf.try_into()?;
+    apply_filter(&bpf_prog)?;
 
     Ok(())
 }
