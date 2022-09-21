@@ -27,14 +27,20 @@ use crate::{promises::{Promise, Filtered, PROMISES}, errors::{Result, Error}};
 pub type WhitelistFrag = (libc::c_long, Vec<Rule>);
 
 
-fn whitelist_syscall(syscal: &libc::c_long) -> Result<WhitelistFrag> {
+fn whitelist_syscall(syscall: libc::c_long) -> Result<WhitelistFrag> {
     let wl = (
-        libc::SYS_personality,
+        syscall,
         vec![],
     );
 
     Ok(wl)
 }
+
+
+fn default_filters() -> Result<Vec<WhitelistFrag>> {
+    Ok(vec![ whitelist_syscall(libc::SYS_exit)? ])
+}
+
 
 // The second argument of fcntl() must be one of:
 //
@@ -372,7 +378,7 @@ fn prlimit64_stdio() -> Result<WhitelistFrag> {
 
 fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     match filter {
-        Filtered::Whitelist(syscall) => whitelist_syscall(syscall),
+        Filtered::Whitelist(syscall) => whitelist_syscall(*syscall),
         Filtered::FcntlStdio => fcntl_stdio(),
         Filtered::MmapNoexec => mmap_noexec(),
         Filtered::MprotectNoexec => mprotect_noexec(),
@@ -388,7 +394,6 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
 
 
 pub fn swear(promises: Vec<Promise>) -> Result<()> {
-
     // Convert all promises into filter specs.
     // FIXME: Should we dedup the list here?
     let filters = promises.into_iter()
