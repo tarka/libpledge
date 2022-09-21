@@ -21,7 +21,7 @@ use seccompiler::{
     SeccompCmpOp as CmpOp, SeccompCondition as Cond, SeccompFilter, SeccompRule as Rule,
 };
 use std::{env::consts::ARCH, process};
-use crate::{promises::{Promise, Filtered, PROMISES}, errors::{Result, Error}};
+use crate::{promises::{Promise, Filtered, PROMISES}, errors::{Result, Error}, ViolationAction};
 
 
 pub type WhitelistFrag = (libc::c_long, Vec<Rule>);
@@ -388,7 +388,22 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
 }
 
 
-pub fn swear(promises: Vec<Promise>) -> Result<()> {
+impl From<ViolationAction> for Action {
+    fn from(va: ViolationAction) -> Self {
+        match va {
+            ViolationAction::Allow => Action::Allow,
+            ViolationAction::Errno(e) => Action::Errno(e),
+            ViolationAction::KillThread => Action::KillThread,
+            ViolationAction::KillProcess => Action::KillProcess,
+            ViolationAction::Log => Action::Log,
+            ViolationAction::Trace(t) => Action::Trace(t),
+            ViolationAction::Trap => Action::Trap,
+        }
+    }
+}
+
+
+pub fn swear(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> {
 
     // Convert all promises into filter specs.
     // FIXME: Should we dedup the list here?
@@ -408,7 +423,7 @@ pub fn swear(promises: Vec<Promise>) -> Result<()> {
 
     let sf = SeccompFilter::new(
         whitelist.into_iter().collect(),
-        Action::Errno(1000),
+        Action::from(violation),
         Action::Allow,
         ARCH.try_into()?
     )?;
