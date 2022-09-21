@@ -39,3 +39,7 @@ pub enum ViolationAction {
 
 
 pub use seccomp::swear;
+pub use promises::Promise;
+
+pub use errors::Error;
+pub use errors::Result;

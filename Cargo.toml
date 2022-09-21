@@ -10,3 +10,4 @@ seccompiler = "0.3.0"
 thiserror = "1.0.35"
 
 [dev-dependencies]
+nix = "0.25.0"
