@@ -21,7 +21,7 @@ use std::{fs::File, io::{BufReader, BufRead}, time::{SystemTime, UNIX_EPOCH}};
 
 use libc;
 use nix::{unistd::{fork, ForkResult}, sys::{wait::{waitpid, WaitStatus}, signal::Signal}};
-use oath::{swear, Promise::*, ViolationAction};
+use oath::{pledge, Promise::*, ViolationAction};
 
 
 
@@ -39,7 +39,7 @@ fn stdio_personality_errno() {
         }
 
     } else {
-        swear(vec![ StdIO ], ViolationAction::Errno(999)).unwrap();
+        pledge(vec![ StdIO ], ViolationAction::Errno(999)).unwrap();
 
         let ret = unsafe { libc::personality(0xffffffff) };
         let errno = std::io::Error::last_os_error().raw_os_error().unwrap();
@@ -65,7 +65,7 @@ fn stdio_personality_killed() {
         }
 
     } else {
-        swear(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
+        pledge(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
 
         let _ret = unsafe { libc::personality(0xffffffff) };
     }
@@ -86,7 +86,7 @@ fn empty_exit_ok() {
         }
 
     } else {
-        swear(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
+        pledge(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
         unsafe {
             // glibc calls exit_group, which is blocked at this point.
             libc::syscall(libc::SYS_exit, 99)
@@ -109,7 +109,7 @@ fn stdio_time_ok() {
         }
 
     } else {
-        swear(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
+        pledge(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
         let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
         println!("Timestamp is {}", ts);
         unsafe { libc::exit(99) };
@@ -131,7 +131,7 @@ fn stdio_exit_ok() {
         }
 
     } else {
-        swear(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
+        pledge(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
         unsafe { libc::exit(99) };
     }
 }
@@ -151,7 +151,7 @@ fn stdio_open_not_passwd() {
         }
 
     } else {
-        swear(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
+        pledge(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
         let _fd = File::open("/etc/passwd");
         unsafe { libc::exit(99) };
     }
@@ -171,7 +171,7 @@ fn rpath_open_passwd() {
         }
 
     } else {
-        swear(vec![ StdIO, RPath ], ViolationAction::KillProcess).unwrap();
+        pledge(vec![ StdIO, RPath ], ViolationAction::KillProcess).unwrap();
         let fd = File::open("/etc/passwd").unwrap();
         let lines = BufReader::new(fd).lines();
         assert!(lines.count() > 0);
@@ -194,7 +194,7 @@ fn rpath_no_write() {
         }
 
     } else {
-        swear(vec![ StdIO, RPath ], ViolationAction::KillProcess).unwrap();
+        pledge(vec![ StdIO, RPath ], ViolationAction::KillProcess).unwrap();
         let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
         let _fd = File::create(format!("target/{}.tmp", ts));
         unsafe { libc::exit(99) };

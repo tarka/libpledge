@@ -477,8 +477,7 @@ impl From<ViolationAction> for Action {
 }
 
 
-pub fn swear(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> {
-
+pub fn pledge(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> {
     // Convert all promises into filter specs.
     // FIXME: Should we dedup the list here?
     let defaults = vec![ Promise::Default ];
