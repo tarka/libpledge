@@ -29,6 +29,7 @@ pub enum Promise {
 }
 use Promise::*;
 
+#[derive(Eq, PartialEq, Debug)]
 pub(crate) enum Filtered {
     Whitelist(libc::c_long),
     FcntlStdio,

@@ -30,6 +30,7 @@ pub fn fork_expect_code(expected: i32, childfn: fn()) {
         match ret {
             WaitStatus::Exited(p2, code) => {
                 assert!(p2 == pid);
+                println!("Expect: {} == {}", code, expected);
                 assert!(code == expected);
             }
             _ => assert!(false, "Wrong return: {:?}", ret),

@@ -519,7 +519,7 @@ fn open_createonly() -> Result<WhitelistFrag> {
                 Cond::new(
                     1,
                     ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    CmpOp::MaskedEq(libc::O_CREAT as u64),
                     libc::O_CREAT as u64,
                 )?,
                 Cond::new(
@@ -533,7 +533,7 @@ fn open_createonly() -> Result<WhitelistFrag> {
                 Cond::new(
                     1,
                     ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    CmpOp::MaskedEq(libc::O_CREAT as u64),
                     0o020200000,
                 )?,
                 Cond::new(
@@ -568,7 +568,7 @@ fn openat_createonly() -> Result<WhitelistFrag> {
                 Cond::new(
                     2,
                     ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    CmpOp::MaskedEq(libc::O_CREAT as u64),
                     libc::O_CREAT as u64,
                 )?,
                 Cond::new(
@@ -582,8 +582,8 @@ fn openat_createonly() -> Result<WhitelistFrag> {
                 Cond::new(
                     2,
                     ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                    0o020200000,
+                    CmpOp::MaskedEq(0o020000000),
+                    0o020000000,
                 )?,
                 Cond::new(
                     3,
@@ -665,6 +665,7 @@ pub fn pledge(promises: Vec<Promise>) -> Result<()> {
     pledge_override(promises, ViolationAction::KillProcess)
 }
 
+
 pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> {
     // Convert all promises into filter specs.
     // FIXME: Should we dedup the list here?
@@ -686,7 +687,7 @@ pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Re
 
     let sf = SeccompFilter::new(
         whitelist.into_iter().collect(),
-        violation.into(),
+        Action::from(violation),
         Action::Allow,
         ARCH.try_into()?,
     )?;

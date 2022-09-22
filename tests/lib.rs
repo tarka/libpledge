@@ -21,7 +21,7 @@ mod util;
 use util::{fork_expect_code, fork_expect_sig};
 
 use std::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::{BufRead, BufReader},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -106,7 +106,7 @@ fn rpath_open_passwd() {
 }
 
 #[test]
-fn rpath_no_write() {
+fn rpath_no_create() {
     fork_expect_sig(Signal::SIGSYS, || {
         pledge(vec![StdIO, RPath]).unwrap();
         let ts = SystemTime::now()
@@ -114,6 +114,35 @@ fn rpath_no_write() {
             .unwrap()
             .as_micros();
         let _fd = File::create(format!("target/{}.tmp", ts));
+        unsafe { libc::exit(99) };
+    });
+}
+
+
+#[test]
+fn wpath_no_create() {
+    fork_expect_sig(Signal::SIGSYS, || {
+        pledge(vec![StdIO, WPath]).unwrap();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_micros();
+        let _fd = File::create(format!("target/{}.tmp", ts));
+        unsafe { libc::exit(99) };
+    });
+}
+
+
+#[test]
+fn cpath_can_create() {
+    fork_expect_code(99, || {
+        pledge(vec![StdIO, CPath]).unwrap();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_micros();
+        let tmp = format!("target/{}.tmp", ts);
+        let _fd = File::create(tmp).unwrap();
         unsafe { libc::exit(99) };
     });
 }
