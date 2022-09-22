@@ -17,6 +17,8 @@
 
 mod seccomp;
 
+use std::fs::File;
+
 use libc;
 use nix::{unistd::{fork, ForkResult}, sys::{wait::{waitpid, WaitStatus}, signal::Signal}};
 use oath::{swear, Promise::*, ViolationAction};
@@ -38,7 +40,27 @@ fn stdio_exit_ok() {
     } else {
         swear(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
         unsafe { libc::exit(99) };
+    }
+}
 
+
+#[test]
+fn stdio_open_not_passwd() {
+    let r = unsafe { fork() }.unwrap();
+    if let ForkResult::Parent { child: pid } = r {
+        let ret = waitpid(pid, None).unwrap();
+        match ret {
+            WaitStatus::Signaled(p2, sig, _) => {
+                assert!(p2 == pid);
+                assert!(sig == Signal::SIGSYS);
+            },
+            _ => assert!(false, "Wrong return: {:?}", ret)
+        }
+
+    } else {
+        swear(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
+        let _fd = File::open("/etc/passwd");
+        unsafe { libc::exit(99) };
     }
 }
 
@@ -65,7 +87,6 @@ fn stdio_personality_errno() {
         if ret != -1 || errno != 999 {
             unsafe { libc::exit(-1) };
         }
-
     }
 }
 
@@ -87,6 +108,5 @@ fn stdio_personality_killed() {
         swear(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
 
         let _ret = unsafe { libc::personality(0xffffffff) };
-
     }
 }
