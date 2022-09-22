@@ -38,6 +38,8 @@ pub(crate) enum Filtered {
     PrctlStdio,
     CloneThread,
     Prlimit64Stdio,
+    OpenReadonly,
+    OpenatReadonly,
 }
 
 lazy_static! {
@@ -159,6 +161,24 @@ lazy_static! {
             Filtered::Whitelist(libc::SYS_set_robust_list),
             Filtered::Whitelist(libc::SYS_get_robust_list),
             Filtered::Prlimit64Stdio,
+        }),
+        (Promise::RPath, vec!{
+            Filtered::Whitelist(libc::SYS_chdir),
+            Filtered::Whitelist(libc::SYS_getcwd),
+            Filtered::OpenReadonly,
+            Filtered::OpenatReadonly,
+            Filtered::Whitelist(libc::SYS_stat),
+            Filtered::Whitelist(libc::SYS_lstat),
+            Filtered::Whitelist(libc::SYS_fstat),
+            Filtered::Whitelist(libc::SYS_newfstatat),
+            Filtered::Whitelist(libc::SYS_access),
+            Filtered::Whitelist(libc::SYS_faccessat),
+            Filtered::Whitelist(libc::SYS_faccessat2),
+            Filtered::Whitelist(libc::SYS_readlink),
+            Filtered::Whitelist(libc::SYS_readlinkat),
+            Filtered::Whitelist(libc::SYS_statfs),
+            Filtered::Whitelist(libc::SYS_fstatfs),
+            Filtered::Whitelist(libc::SYS_getdents),
         }),
 
     ]);

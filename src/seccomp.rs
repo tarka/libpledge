@@ -371,6 +371,78 @@ fn prlimit64_stdio() -> Result<WhitelistFrag> {
 }
 
 
+// The open() system call is permitted only when
+//
+//   - (flags & O_ACCMODE) == O_RDONLY
+//
+// The flags parameter of open() must not have:
+//
+//   - O_CREAT     (000000100)
+//   - O_TRUNC     (000001000)
+//   - __O_TMPFILE (020000000)
+//
+fn open_readonly() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_openat,
+        vec![
+            Rule::new(vec![
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    libc::O_RDONLY as u64,
+                )?
+            ])?,
+            Rule::new(vec![
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    0o020001100,
+                )?
+            ])?,
+        ]
+    );
+    Ok(wl)
+}
+
+
+// The openat() system call is permitted only when
+//
+//   - (flags & O_ACCMODE) == O_RDONLY
+//
+// The flags parameter of open() must not have:
+//
+//   - O_CREAT     (000000100)
+//   - O_TRUNC     (000001000)
+//   - __O_TMPFILE (020000000)
+//
+fn openat_readonly() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_open,
+        vec![
+            Rule::new(vec![
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    libc::O_RDONLY as u64,
+                )?
+            ])?,
+            Rule::new(vec![
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    0o020001100,
+                )?
+            ])?,
+        ]
+    );
+    Ok(wl)
+}
+
+
 fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     match filter {
         Filtered::Whitelist(syscall) => whitelist_syscall(*syscall),
@@ -384,6 +456,8 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
         Filtered::PrctlStdio => prctl_stdio(),
         Filtered::CloneThread => clone_thread(),
         Filtered::Prlimit64Stdio => prlimit64_stdio(),
+        Filtered::OpenReadonly => open_readonly(),
+        Filtered::OpenatReadonly => openat_readonly(),
     }
 }
 
