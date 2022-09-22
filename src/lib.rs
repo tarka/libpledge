@@ -39,6 +39,7 @@ pub enum ViolationAction {
 
 
 pub use seccomp::pledge;
+pub use seccomp::pledge_override;
 pub use promises::Promise;
 
 pub use errors::Error;

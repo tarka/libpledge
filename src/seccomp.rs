@@ -477,7 +477,11 @@ impl From<ViolationAction> for Action {
 }
 
 
-pub fn pledge(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> {
+pub fn pledge(promises: Vec<Promise>) -> Result<()> {
+    pledge_override(promises, ViolationAction::KillProcess)
+}
+
+pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> {
     // Convert all promises into filter specs.
     // FIXME: Should we dedup the list here?
     let defaults = vec![ Promise::Default ];
@@ -496,7 +500,7 @@ pub fn pledge(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> 
 
     let sf = SeccompFilter::new(
         whitelist.into_iter().collect(),
-        Action::from(violation),
+        violation.into(),
         Action::Allow,
         ARCH.try_into()?
     )?;
