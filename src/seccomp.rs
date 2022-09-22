@@ -277,7 +277,9 @@ fn clone_thread() -> Result<WhitelistFrag> {
 fn prlimit64_stdio() -> Result<WhitelistFrag> {
     let wl = (
         libc::SYS_prlimit64,
-        vec![Rule::new(vec![Cond::new(0, ArgLen::Qword, CmpOp::Eq, 0)?])?],
+        vec![Rule::new(vec![
+            Cond::new(2, ArgLen::Qword, CmpOp::Eq, 0)?
+        ])?],
     );
     Ok(wl)
 }
@@ -294,16 +296,16 @@ fn prlimit64_stdio() -> Result<WhitelistFrag> {
 //
 fn open_readonly() -> Result<WhitelistFrag> {
     let wl = (
-        libc::SYS_openat,
+        libc::SYS_open,
         vec![
             Rule::new(vec![Cond::new(
-                2,
+                1,
                 ArgLen::Dword,
                 CmpOp::MaskedEq(libc::O_ACCMODE as u64),
                 libc::O_RDONLY as u64,
             )?])?,
             Rule::new(vec![Cond::new(
-                2,
+                1,
                 ArgLen::Dword,
                 CmpOp::MaskedEq(libc::O_ACCMODE as u64),
                 0o020001100,
@@ -325,7 +327,7 @@ fn open_readonly() -> Result<WhitelistFrag> {
 //
 fn openat_readonly() -> Result<WhitelistFrag> {
     let wl = (
-        libc::SYS_open,
+        libc::SYS_openat,
         vec![
             Rule::new(vec![Cond::new(
                 2,
@@ -344,6 +346,281 @@ fn openat_readonly() -> Result<WhitelistFrag> {
     Ok(wl)
 }
 
+
+// The open() system call is permitted only when
+//
+//   - (flags & O_ACCMODE) == O_WRONLY
+//   - (flags & O_ACCMODE) == O_RDWR
+//
+// The open() flags parameter must not contain
+//
+//   - O_CREAT     (000000100)
+//   - __O_TMPFILE (020000000)
+//
+fn open_writeonly() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_open,
+        vec![
+            Rule::new(vec![Cond::new(
+                1,
+                ArgLen::Dword,
+                CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                libc::O_WRONLY as u64,
+            )?])?,
+            Rule::new(vec![Cond::new(
+                1,
+                ArgLen::Dword,
+                CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                libc::O_RDWR as u64,
+            )?])?,
+            Rule::new(vec![Cond::new(
+                1,
+                ArgLen::Dword,
+                CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                0o020000100,
+            )?])?,
+        ],
+    );
+    Ok(wl)
+}
+
+
+// The openat() system call is permitted only when
+//
+//   - (flags & O_ACCMODE) == O_WRONLY
+//   - (flags & O_ACCMODE) == O_RDWR
+//
+// The open() flags parameter must not contain
+//
+//   - O_CREAT     (000000100)
+//   - __O_TMPFILE (020000000)
+//
+fn openat_writeonly() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_openat,
+        vec![
+            Rule::new(vec![
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    libc::O_WRONLY as u64,
+                )?,
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    0o020000100,
+                )?
+
+            ])?,
+            Rule::new(vec![
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    libc::O_RDWR as u64,
+                )?,
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    0o020000100,
+                )?
+            ])?,
+        ],
+    );
+    Ok(wl)
+}
+
+
+// The mode parameter of chmod() can't have the following:
+//
+//   - S_ISVTX (01000 sticky)
+//   - S_ISGID (02000 setgid)
+//   - S_ISUID (04000 setuid)
+//
+fn chmod_nobits() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_chmod,
+        vec![
+            Rule::new(vec![Cond::new(
+                1,
+                ArgLen::Dword,
+                CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
+                0,
+            )?])?,
+        ],
+    );
+    Ok(wl)
+}
+
+
+// The mode parameter of fchmod() can't have the following:
+//
+//   - S_ISVTX (01000 sticky)
+//   - S_ISGID (02000 setgid)
+//   - S_ISUID (04000 setuid)
+//
+fn fchmod_nobits() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_fchmod,
+        vec![
+            Rule::new(vec![Cond::new(
+                1,
+                ArgLen::Dword,
+                CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
+                0,
+            )?])?,
+        ],
+    );
+    Ok(wl)
+}
+
+
+// The mode parameter of fchmodat() can't have the following:
+//
+//   - S_ISVTX (01000 sticky)
+//   - S_ISGID (02000 setgid)
+//   - S_ISUID (04000 setuid)
+//
+fn fchmodat_nobits() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_fchmod,
+        vec![
+            Rule::new(vec![Cond::new(
+                2,
+                ArgLen::Dword,
+                CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
+                0,
+            )?])?,
+        ],
+    );
+    Ok(wl)
+}
+
+
+// If the flags parameter of open() has one of:
+//
+//   - O_CREAT     (000000100)
+//   - __O_TMPFILE (020000000)
+//
+// Then the mode parameter must not have:
+//
+//   - S_ISVTX (01000 sticky)
+//   - S_ISGID (02000 setgid)
+//   - S_ISUID (04000 setuid)
+//
+fn open_createonly() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_open,
+        vec![
+            Rule::new(vec![
+                Cond::new(
+                    1,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    libc::O_CREAT as u64,
+                )?,
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
+                    0,
+                )?,
+            ])?,
+            Rule::new(vec![
+                Cond::new(
+                    1,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    0o020200000,
+                )?,
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
+                    0,
+                )?,
+            ])?,
+        ],
+    );
+    Ok(wl)
+}
+
+
+// If the flags parameter of openat() has one of:
+//
+//   - O_CREAT     (000000100)
+//   - __O_TMPFILE (020000000)
+//
+// Then the mode parameter must not have:
+//
+//   - S_ISVTX (01000 sticky)
+//   - S_ISGID (02000 setgid)
+//   - S_ISUID (04000 setuid)
+//
+fn openat_createonly() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_openat,
+        vec![
+            Rule::new(vec![
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    libc::O_CREAT as u64,
+                )?,
+                Cond::new(
+                    3,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
+                    0,
+                )?,
+            ])?,
+            Rule::new(vec![
+                Cond::new(
+                    2,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    0o020200000,
+                )?,
+                Cond::new(
+                    3,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
+                    0,
+                )?,
+            ])?,
+        ],
+    );
+    Ok(wl)
+}
+
+
+// Then the mode parameter must not have:
+//
+//   - S_ISVTX (01000 sticky)
+//   - S_ISGID (02000 setgid)
+//   - S_ISUID (04000 setuid)
+//
+fn create_restrict() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_creat,
+        vec![
+            Rule::new(vec![Cond::new(
+                1,
+                ArgLen::Dword,
+                CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
+                0,
+            )?])?,
+        ],
+    );
+    Ok(wl)
+}
+
+
+
 fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     match filter {
         Filtered::Whitelist(syscall) => whitelist_syscall(*syscall),
@@ -359,6 +636,14 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
         Filtered::Prlimit64Stdio => prlimit64_stdio(),
         Filtered::OpenReadonly => open_readonly(),
         Filtered::OpenatReadonly => openat_readonly(),
+        Filtered::OpenWriteonly => open_writeonly(),
+        Filtered::OpenatWriteonly => openat_writeonly(),
+        Filtered::ChmodNobits => chmod_nobits(),
+        Filtered::FchmodNobits => fchmod_nobits(),
+        Filtered::FchmodatNobits => fchmodat_nobits(),
+        Filtered::OpenCreateonly => open_createonly(),
+        Filtered::OpenatCreateonly => openat_createonly(),
+        Filtered::CreatRestrict => create_restrict(),
     }
 }
 

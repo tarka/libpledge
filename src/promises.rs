@@ -24,6 +24,8 @@ pub enum Promise {
     Default,
     StdIO,
     RPath,
+    WPath,
+    CPath,
 }
 use Promise::*;
 
@@ -41,6 +43,14 @@ pub(crate) enum Filtered {
     Prlimit64Stdio,
     OpenReadonly,
     OpenatReadonly,
+    OpenWriteonly,
+    OpenatWriteonly,
+    ChmodNobits,
+    FchmodNobits,
+    FchmodatNobits,
+    OpenCreateonly,
+    OpenatCreateonly,
+    CreatRestrict,
 }
 use Filtered::*;
 
@@ -189,6 +199,46 @@ lazy_static! {
                 Whitelist(libc::SYS_statfs),
                 Whitelist(libc::SYS_fstatfs),
                 Whitelist(libc::SYS_getdents),
+            }
+        ),
+        (
+            WPath,
+            vec! {
+                Whitelist(libc::SYS_getcwd),
+                OpenWriteonly,
+                OpenatWriteonly,
+                Whitelist(libc::SYS_stat),
+                Whitelist(libc::SYS_fstat),
+                Whitelist(libc::SYS_lstat),
+                Whitelist(libc::SYS_newfstatat),
+                Whitelist(libc::SYS_access),
+                Whitelist(libc::SYS_truncate),
+                Whitelist(libc::SYS_faccessat),
+                Whitelist(libc::SYS_faccessat2),
+                Whitelist(libc::SYS_readlinkat),
+                ChmodNobits,
+                FchmodNobits,
+                FchmodatNobits,
+            }
+        ),
+        (
+            CPath,
+            vec! {
+                OpenCreateonly,
+                OpenatCreateonly,
+                CreatRestrict,
+                Whitelist(libc::SYS_rename),
+                Whitelist(libc::SYS_renameat),
+                Whitelist(libc::SYS_renameat2),
+                Whitelist(libc::SYS_link),
+                Whitelist(libc::SYS_linkat),
+                Whitelist(libc::SYS_symlink),
+                Whitelist(libc::SYS_symlinkat),
+                Whitelist(libc::SYS_rmdir),
+                Whitelist(libc::SYS_unlink),
+                Whitelist(libc::SYS_unlinkat),
+                Whitelist(libc::SYS_mkdir),
+                Whitelist(libc::SYS_mkdirat),
             }
         ),
     ]);
