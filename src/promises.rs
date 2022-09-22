@@ -26,7 +26,7 @@ pub enum Promise {
     RPath,
 }
 
-pub enum Filtered {
+pub(crate) enum Filtered {
     Whitelist(libc::c_long),
     FcntlStdio,
     MmapNoexec,
@@ -41,7 +41,7 @@ pub enum Filtered {
 }
 
 lazy_static! {
-    pub static ref PROMISES: HashMap<Promise, Vec<Filtered>> = HashMap::from([
+    pub(crate) static ref PROMISES: HashMap<Promise, Vec<Filtered>> = HashMap::from([
         (Promise::Default, vec!{
             Filtered::Whitelist(libc::SYS_exit),
         }),
