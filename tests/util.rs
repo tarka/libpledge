@@ -15,7 +15,13 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-use nix::{unistd::{fork, ForkResult}, sys::{wait::{waitpid, WaitStatus}, signal::Signal}};
+use nix::{
+    sys::{
+        signal::Signal,
+        wait::{waitpid, WaitStatus},
+    },
+    unistd::{fork, ForkResult},
+};
 
 pub fn fork_expect_code(expected: i32, childfn: fn()) {
     let r = unsafe { fork() }.unwrap();
@@ -25,10 +31,9 @@ pub fn fork_expect_code(expected: i32, childfn: fn()) {
             WaitStatus::Exited(p2, code) => {
                 assert!(p2 == pid);
                 assert!(code == expected);
-            },
-            _ => assert!(false, "Wrong return: {:?}", ret)
+            }
+            _ => assert!(false, "Wrong return: {:?}", ret),
         }
-
     } else {
         childfn();
     }
@@ -42,12 +47,10 @@ pub fn fork_expect_sig(expected: Signal, childfn: fn()) {
             WaitStatus::Signaled(p2, sig, _) => {
                 assert!(p2 == pid);
                 assert!(sig == expected);
-            },
-            _ => assert!(false, "Wrong return: {:?}", ret)
+            }
+            _ => assert!(false, "Wrong return: {:?}", ret),
         }
-
     } else {
         childfn();
     }
-
 }

@@ -37,10 +37,9 @@ pub enum ViolationAction {
     Trap,
 }
 
-
+pub use promises::Promise;
 pub use seccomp::pledge;
 pub use seccomp::pledge_override;
-pub use promises::Promise;
 
 pub use errors::Error;
 pub use errors::Result;

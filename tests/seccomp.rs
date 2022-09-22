@@ -31,17 +31,15 @@ fn simple() -> Result<(), BackendError> {
     let filter = Filter::new(
         vec![(
             libc::SYS_personality,
-            vec![
-                Rule::new(vec![
-                    Cond::new(
-                        0,
-                        ArgLen::Dword,
-                        CmpOp::Eq,
-                        0xffffffff,
-                    )?
-                ])?
-            ],
-        )].into_iter().collect(),
+            vec![Rule::new(vec![Cond::new(
+                0,
+                ArgLen::Dword,
+                CmpOp::Eq,
+                0xffffffff,
+            )?])?],
+        )]
+        .into_iter()
+        .collect(),
         Action::Allow,
         Action::Errno(1000),
         ARCH.try_into()?,
