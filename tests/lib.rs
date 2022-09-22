@@ -16,29 +16,20 @@
  */
 
 mod seccomp;
+mod util;
+
+use util::{fork_expect_code, fork_expect_sig};
 
 use std::{fs::File, io::{BufReader, BufRead}, time::{SystemTime, UNIX_EPOCH}};
 
 use libc;
-use nix::{unistd::{fork, ForkResult}, sys::{wait::{waitpid, WaitStatus}, signal::Signal}};
+use nix::sys::signal::Signal;
 use oath::{pledge, Promise::*, ViolationAction};
-
 
 
 #[test]
 fn stdio_personality_errno() {
-    let r = unsafe { fork() }.unwrap();
-    if let ForkResult::Parent { child: pid } = r {
-        let ret = waitpid(pid, None).unwrap();
-        match ret {
-            WaitStatus::Exited(p2, code) => {
-                assert!(p2 == pid);
-                assert!(code == 0);
-            },
-            _ => assert!(false, "Wrong return: {:?}", ret)
-        }
-
-    } else {
+    fork_expect_code(0, || {
         pledge(vec![ StdIO ], ViolationAction::Errno(999)).unwrap();
 
         let ret = unsafe { libc::personality(0xffffffff) };
@@ -47,156 +38,79 @@ fn stdio_personality_errno() {
         if ret != -1 || errno != 999 {
             unsafe { libc::exit(-1) };
         }
-    }
+    });
 }
 
 
 #[test]
 fn stdio_personality_killed() {
-    let r = unsafe { fork() }.unwrap();
-    if let ForkResult::Parent { child: pid } = r {
-        let ret = waitpid(pid, None).unwrap();
-        match ret {
-            WaitStatus::Signaled(p2, sig, _) => {
-                assert!(p2 == pid);
-                assert!(sig == Signal::SIGSYS);
-            },
-            _ => assert!(false, "Wrong return: {:?}", ret)
-        }
-
-    } else {
+    fork_expect_sig(Signal::SIGSYS, || {
         pledge(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
 
         let _ret = unsafe { libc::personality(0xffffffff) };
-    }
+    });
 }
 
 
 #[test]
 fn empty_exit_ok() {
-    let r = unsafe { fork() }.unwrap();
-    if let ForkResult::Parent { child: pid } = r {
-        let ret = waitpid(pid, None).unwrap();
-        match ret {
-            WaitStatus::Exited(p2, code) => {
-                assert!(p2 == pid);
-                assert!(code == 99);
-            },
-            _ => assert!(false, "Wrong return: {:?}", ret)
-        }
-
-    } else {
+    fork_expect_code(99, || {
         pledge(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
         unsafe {
             // glibc calls exit_group, which is blocked at this point.
             libc::syscall(libc::SYS_exit, 99)
         };
-    }
+    });
 }
 
 
 #[test]
 fn stdio_time_ok() {
-    let r = unsafe { fork() }.unwrap();
-    if let ForkResult::Parent { child: pid } = r {
-        let ret = waitpid(pid, None).unwrap();
-        match ret {
-            WaitStatus::Exited(p2, code) => {
-                assert!(p2 == pid);
-                assert!(code == 99);
-            },
-            _ => assert!(false, "Wrong return: {:?}", ret)
-        }
-
-    } else {
+    fork_expect_code(99, || {
         pledge(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
         let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
         println!("Timestamp is {}", ts);
         unsafe { libc::exit(99) };
-    }
+    });
 }
 
 
 #[test]
 fn stdio_exit_ok() {
-    let r = unsafe { fork() }.unwrap();
-    if let ForkResult::Parent { child: pid } = r {
-        let ret = waitpid(pid, None).unwrap();
-        match ret {
-            WaitStatus::Exited(p2, code) => {
-                assert!(p2 == pid);
-                assert!(code == 99);
-            },
-            _ => assert!(false, "Wrong return: {:?}", ret)
-        }
-
-    } else {
+    fork_expect_code(99, || {
         pledge(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
         unsafe { libc::exit(99) };
-    }
+    });
 }
 
 
 #[test]
 fn stdio_open_not_passwd() {
-    let r = unsafe { fork() }.unwrap();
-    if let ForkResult::Parent { child: pid } = r {
-        let ret = waitpid(pid, None).unwrap();
-        match ret {
-            WaitStatus::Signaled(p2, sig, _) => {
-                assert!(p2 == pid);
-                assert!(sig == Signal::SIGSYS);
-            },
-            _ => assert!(false, "Wrong return: {:?}", ret)
-        }
-
-    } else {
+    fork_expect_sig(Signal::SIGSYS, || {
         pledge(vec![ StdIO ], ViolationAction::KillProcess).unwrap();
         let _fd = File::open("/etc/passwd");
         unsafe { libc::exit(99) };
-    }
+    });
 }
 
 #[test]
 fn rpath_open_passwd() {
-    let r = unsafe { fork() }.unwrap();
-    if let ForkResult::Parent { child: pid } = r {
-        let ret = waitpid(pid, None).unwrap();
-        match ret {
-            WaitStatus::Exited(p2, code) => {
-                assert!(p2 == pid);
-                assert!(code == 99);
-            },
-            _ => assert!(false, "Wrong return: {:?}", ret)
-        }
-
-    } else {
+    fork_expect_code(99, || {
         pledge(vec![ StdIO, RPath ], ViolationAction::KillProcess).unwrap();
         let fd = File::open("/etc/passwd").unwrap();
         let lines = BufReader::new(fd).lines();
         assert!(lines.count() > 0);
         unsafe { libc::exit(99) };
-    }
+    });
 }
 
 
 #[test]
 fn rpath_no_write() {
-    let r = unsafe { fork() }.unwrap();
-    if let ForkResult::Parent { child: pid } = r {
-        let ret = waitpid(pid, None).unwrap();
-        match ret {
-            WaitStatus::Signaled(p2, sig, _) => {
-                assert!(p2 == pid);
-                assert!(sig == Signal::SIGSYS);
-            },
-            _ => assert!(false, "Wrong return: {:?}", ret)
-        }
-
-    } else {
+    fork_expect_sig(Signal::SIGSYS, || {
         pledge(vec![ StdIO, RPath ], ViolationAction::KillProcess).unwrap();
         let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
         let _fd = File::create(format!("target/{}.tmp", ts));
         unsafe { libc::exit(99) };
-    }
+    });
 }
