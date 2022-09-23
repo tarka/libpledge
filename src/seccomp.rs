@@ -307,8 +307,8 @@ fn open_readonly() -> Result<WhitelistFrag> {
             Rule::new(vec![Cond::new(
                 1,
                 ArgLen::Dword,
-                CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                0o020001100,
+                CmpOp::MaskedEq(0o020001100),
+                0,
             )?])?,
         ],
     );
@@ -338,8 +338,8 @@ fn openat_readonly() -> Result<WhitelistFrag> {
             Rule::new(vec![Cond::new(
                 2,
                 ArgLen::Dword,
-                CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                0o020001100,
+                CmpOp::MaskedEq(0o020001100),
+                0,
             )?])?,
         ],
     );
@@ -361,24 +361,35 @@ fn open_writeonly() -> Result<WhitelistFrag> {
     let wl = (
         libc::SYS_open,
         vec![
-            Rule::new(vec![Cond::new(
-                1,
-                ArgLen::Dword,
-                CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                libc::O_WRONLY as u64,
-            )?])?,
-            Rule::new(vec![Cond::new(
-                1,
-                ArgLen::Dword,
-                CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                libc::O_RDWR as u64,
-            )?])?,
-            Rule::new(vec![Cond::new(
-                1,
-                ArgLen::Dword,
-                CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                0o020000100,
-            )?])?,
+            Rule::new(vec![
+                Cond::new(
+                    1,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    libc::O_WRONLY as u64,
+                )?,
+                Cond::new(
+                    1,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(0o020000100),
+                    0,
+                )?
+
+            ])?,
+            Rule::new(vec![
+                Cond::new(
+                    1,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
+                    libc::O_RDWR as u64,
+                )?,
+                Cond::new(
+                    1,
+                    ArgLen::Dword,
+                    CmpOp::MaskedEq(0o020000100),
+                    0,
+                )?
+            ])?,
         ],
     );
     Ok(wl)
@@ -409,8 +420,8 @@ fn openat_writeonly() -> Result<WhitelistFrag> {
                 Cond::new(
                     2,
                     ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                    0o020000100,
+                    CmpOp::MaskedEq(0o020000100),
+                    0,
                 )?
 
             ])?,
@@ -424,8 +435,8 @@ fn openat_writeonly() -> Result<WhitelistFrag> {
                 Cond::new(
                     2,
                     ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                    0o020000100,
+                    CmpOp::MaskedEq(0o020000100),
+                    0,
                 )?
             ])?,
         ],
@@ -533,7 +544,7 @@ fn open_createonly() -> Result<WhitelistFrag> {
                 Cond::new(
                     1,
                     ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_CREAT as u64),
+                    CmpOp::MaskedEq(0o020200000),
                     0o020200000,
                 )?,
                 Cond::new(
@@ -582,8 +593,8 @@ fn openat_createonly() -> Result<WhitelistFrag> {
                 Cond::new(
                     2,
                     ArgLen::Dword,
-                    CmpOp::MaskedEq(0o020000000),
-                    0o020000000,
+                    CmpOp::MaskedEq(0o020200000),
+                    0o020200000,
                 )?,
                 Cond::new(
                     3,
