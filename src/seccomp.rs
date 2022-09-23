@@ -25,7 +25,7 @@ use seccompiler::{
     apply_filter, BpfProgram, SeccompAction as Action, SeccompCmpArgLen as ArgLen,
     SeccompCmpOp as CmpOp, SeccompCondition as Cond, SeccompFilter, SeccompRule as Rule,
 };
-use std::{env::consts::ARCH, process};
+use std::{env::consts::ARCH, process, collections::BTreeMap};
 
 pub type WhitelistFrag = (libc::c_long, Vec<Rule>);
 
@@ -631,7 +631,6 @@ fn create_restrict() -> Result<WhitelistFrag> {
 }
 
 
-
 fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     match filter {
         Filtered::Whitelist(syscall) => whitelist_syscall(*syscall),
@@ -658,6 +657,7 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     }
 }
 
+
 impl From<ViolationAction> for Action {
     fn from(va: ViolationAction) -> Self {
         match va {
@@ -680,7 +680,6 @@ pub fn pledge(promises: Vec<Promise>) -> Result<()> {
 
 pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> {
     // Convert all promises into filter specs.
-    // FIXME: Should we dedup the list here?
     let defaults = vec![Promise::Default];
     let filters = defaults
         .into_iter()
@@ -697,8 +696,25 @@ pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Re
         .map(oath_to_bpf)
         .collect::<Result<Vec<WhitelistFrag>>>()?;
 
+    // Seccomp takes a BTreeMap with the syscall as the key. This
+    // means that any duplicate syscall rules will silently overwrite
+    // previous ones. So we need to dedup these manually here.
+    // See https://github.com/rust-vmm/seccompiler/issues/42
+    let mut btrules: BTreeMap<libc::c_long, Vec<Rule>> = BTreeMap::new();
+    for (syscall, rules) in whitelist {
+        let vo = btrules.get_mut(&syscall);
+        match vo {
+            Some(v) => {
+                v.extend(rules);
+            },
+            None => {
+                btrules.insert(syscall, rules);
+            }
+        }
+    }
+
     let sf = SeccompFilter::new(
-        whitelist.into_iter().collect(),
+        btrules,
         Action::from(violation),
         Action::Allow,
         ARCH.try_into()?,
