@@ -195,3 +195,31 @@ fn fcntl_ok() {
         unsafe { libc::exit(99) };
     });
 }
+
+
+#[test]
+fn no_fattr() {
+    fork_expect_sig(Signal::SIGSYS, || {
+        pledge(vec![StdIO, CPath]).unwrap();
+        {
+            let mut fd = File::create(tmpfile()).unwrap();
+            fd.write_all(b"some dummy data").unwrap();
+            unsafe { libc::fchmod(fd.as_raw_fd(), libc::S_ISUID) };
+        }
+        unsafe { libc::exit(99) };
+    });
+}
+
+
+#[test]
+fn fattr_ok() {
+    fork_expect_code(99, || {
+        pledge(vec![StdIO, CPath, FAttr]).unwrap();
+        {
+            let mut fd = File::create(tmpfile()).unwrap();
+            fd.write_all(b"some dummy data").unwrap();
+            unsafe { libc::fchmod(fd.as_raw_fd(), libc::S_ISUID) };
+        }
+        unsafe { libc::exit(99) };
+    });
+}

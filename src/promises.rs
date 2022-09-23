@@ -28,6 +28,7 @@ pub enum Promise {
     CPath,
     DPath,
     FLock,
+    FAttr,
 }
 use Promise::*;
 
@@ -257,6 +258,18 @@ lazy_static! {
             vec! {
                 Whitelist(libc::SYS_flock),
                 FcntlLock,
+            }
+        ),
+        (
+            FAttr,
+            vec! {
+                ChmodNobits,
+                FchmodNobits,
+                FchmodatNobits,
+                Whitelist(libc::SYS_utime),
+                Whitelist(libc::SYS_utimes),
+                Whitelist(libc::SYS_futimesat),
+                Whitelist(libc::SYS_utimensat),
             }
         ),
     ]);
