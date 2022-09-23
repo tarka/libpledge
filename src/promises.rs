@@ -27,6 +27,7 @@ pub enum Promise {
     WPath,
     CPath,
     DPath,
+    FLock,
 }
 use Promise::*;
 
@@ -53,6 +54,7 @@ pub(crate) enum Filtered {
     OpenCreateonly,
     OpenatCreateonly,
     CreatRestrict,
+    FcntlLock,
 }
 use Filtered::*;
 
@@ -248,6 +250,13 @@ lazy_static! {
             vec! {
                 Whitelist(libc::SYS_mknod),
                 Whitelist(libc::SYS_mknodat),
+            }
+        ),
+        (
+            FLock,
+            vec! {
+                Whitelist(libc::SYS_flock),
+                FcntlLock,
             }
         ),
     ]);

@@ -23,7 +23,7 @@ use util::{fork_expect_code, fork_expect_sig, tmpfile};
 use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
-    time::{SystemTime, UNIX_EPOCH}, ffi::CString,
+    time::{SystemTime, UNIX_EPOCH}, ffi::CString, os::unix::prelude::AsRawFd,
 };
 
 use libc;
@@ -166,3 +166,32 @@ fn dpath_mknod_ok() {
     });
 }
 
+
+#[test]
+fn no_fcntl() {
+    fork_expect_sig(Signal::SIGSYS, || {
+        pledge(vec![StdIO, CPath]).unwrap();
+        {
+            let mut fd = File::create(tmpfile()).unwrap();
+            fd.write_all(b"some dummy data").unwrap();
+
+            unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETLK) };
+        }
+        unsafe { libc::exit(99) };
+    });
+}
+
+
+#[test]
+fn fcntl_ok() {
+    fork_expect_code(99, || {
+        pledge(vec![StdIO, CPath, FLock]).unwrap();
+        {
+            let mut fd = File::create(tmpfile()).unwrap();
+            fd.write_all(b"some dummy data").unwrap();
+
+            unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETLK) };
+        }
+        unsafe { libc::exit(99) };
+    });
+}

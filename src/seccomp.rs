@@ -631,6 +631,36 @@ fn create_restrict() -> Result<WhitelistFrag> {
 }
 
 
+// The second argument of fcntl() must be one of:
+//
+//   - F_GETLK (5)
+//   - F_SETLK (6)
+//   - F_SETLKW (7)
+//
+fn fcntl_lock() -> Result<WhitelistFrag> {
+    let wl = (
+        libc::SYS_fcntl,
+        vec![
+            Rule::new(vec![
+                Cond::new(
+                    1,
+                    ArgLen::Dword,
+                    CmpOp::Ge,
+                    5,
+                )?,
+                Cond::new(
+                    1,
+                    ArgLen::Dword,
+                    CmpOp::Le,
+                    7,
+                )?,
+            ])?,
+        ]
+    );
+    Ok(wl)
+}
+
+
 fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     match filter {
         Filtered::Whitelist(syscall) => whitelist_syscall(*syscall),
@@ -654,6 +684,7 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
         Filtered::OpenCreateonly => open_createonly(),
         Filtered::OpenatCreateonly => openat_createonly(),
         Filtered::CreatRestrict => create_restrict(),
+        Filtered::FcntlLock => fcntl_lock(),
     }
 }
 
