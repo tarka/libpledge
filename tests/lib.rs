@@ -21,8 +21,8 @@ mod util;
 use util::{fork_expect_code, fork_expect_sig};
 
 use std::{
-    fs::{File, OpenOptions},
-    io::{BufRead, BufReader},
+    fs::File,
+    io::{BufRead, BufReader, Write},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -118,7 +118,6 @@ fn rpath_no_create() {
     });
 }
 
-
 #[test]
 fn wpath_no_create() {
     fork_expect_sig(Signal::SIGSYS, || {
@@ -132,7 +131,6 @@ fn wpath_no_create() {
     });
 }
 
-
 #[test]
 fn cpath_can_create() {
     fork_expect_code(99, || {
@@ -143,6 +141,23 @@ fn cpath_can_create() {
             .as_micros();
         let tmp = format!("target/{}.tmp", ts);
         let _fd = File::create(tmp).unwrap();
+        unsafe { libc::exit(99) };
+    });
+}
+
+#[test]
+fn create_and_write() {
+    fork_expect_code(99, || {
+        pledge(vec![StdIO, CPath, WPath]).unwrap();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_micros();
+        let tmp = format!("target/{}.tmp", ts);
+        {
+            let mut fd = File::create(tmp).unwrap();
+            fd.write_all(b"some dummy data").unwrap();
+        }
         unsafe { libc::exit(99) };
     });
 }
