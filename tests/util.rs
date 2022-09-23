@@ -23,6 +23,8 @@ use nix::{
     unistd::{fork, ForkResult},
 };
 
+use std::{time::{SystemTime, UNIX_EPOCH}, path::PathBuf};
+
 pub fn fork_expect_code(expected: i32, childfn: fn()) {
     let r = unsafe { fork() }.unwrap();
     if let ForkResult::Parent { child: pid } = r {
@@ -54,4 +56,12 @@ pub fn fork_expect_sig(expected: Signal, childfn: fn()) {
     } else {
         childfn();
     }
+}
+
+pub fn tmpfile() -> PathBuf {
+    let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+        .as_micros();
+    PathBuf::from(format!("target/{}.tmp", ts))
 }

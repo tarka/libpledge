@@ -26,6 +26,7 @@ pub enum Promise {
     RPath,
     WPath,
     CPath,
+    DPath,
 }
 use Promise::*;
 
@@ -240,6 +241,13 @@ lazy_static! {
                 Whitelist(libc::SYS_unlinkat),
                 Whitelist(libc::SYS_mkdir),
                 Whitelist(libc::SYS_mkdirat),
+            }
+        ),
+        (
+            DPath,
+            vec! {
+                Whitelist(libc::SYS_mknod),
+                Whitelist(libc::SYS_mknodat),
             }
         ),
     ]);

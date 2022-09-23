@@ -18,12 +18,12 @@
 mod seccomp;
 mod util;
 
-use util::{fork_expect_code, fork_expect_sig};
+use util::{fork_expect_code, fork_expect_sig, tmpfile};
 
 use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH}, ffi::CString,
 };
 
 use libc;
@@ -109,11 +109,7 @@ fn rpath_open_passwd() {
 fn rpath_no_create() {
     fork_expect_sig(Signal::SIGSYS, || {
         pledge(vec![StdIO, RPath]).unwrap();
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_micros();
-        let _fd = File::create(format!("target/{}.tmp", ts));
+        let _fd = File::create(tmpfile());
         unsafe { libc::exit(99) };
     });
 }
@@ -122,11 +118,7 @@ fn rpath_no_create() {
 fn wpath_no_create() {
     fork_expect_sig(Signal::SIGSYS, || {
         pledge(vec![StdIO, WPath]).unwrap();
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_micros();
-        let _fd = File::create(format!("target/{}.tmp", ts));
+        let _fd = File::create(tmpfile());
         unsafe { libc::exit(99) };
     });
 }
@@ -135,12 +127,7 @@ fn wpath_no_create() {
 fn cpath_can_create() {
     fork_expect_code(99, || {
         pledge(vec![StdIO, CPath]).unwrap();
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_micros();
-        let tmp = format!("target/{}.tmp", ts);
-        let _fd = File::create(tmp).unwrap();
+        let _fd = File::create(tmpfile()).unwrap();
         unsafe { libc::exit(99) };
     });
 }
@@ -149,15 +136,33 @@ fn cpath_can_create() {
 fn create_and_write() {
     fork_expect_code(99, || {
         pledge(vec![StdIO, CPath, WPath]).unwrap();
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_micros();
-        let tmp = format!("target/{}.tmp", ts);
         {
-            let mut fd = File::create(tmp).unwrap();
+            let mut fd = File::create(tmpfile()).unwrap();
             fd.write_all(b"some dummy data").unwrap();
         }
         unsafe { libc::exit(99) };
     });
 }
+
+#[test]
+fn no_dpath_mknod() {
+    fork_expect_sig(Signal::SIGSYS, || {
+        pledge(vec![StdIO]).unwrap();
+        let tmp = CString::new(tmpfile().to_str().unwrap()).unwrap();
+        unsafe { libc::mknod(tmp.as_ptr(), libc::S_IRUSR, 0) };
+
+        unsafe { libc::exit(99) };
+    });
+}
+
+#[test]
+fn dpath_mknod_ok() {
+    fork_expect_code(99, || {
+        pledge(vec![StdIO, DPath]).unwrap();
+        let tmp = CString::new(tmpfile().to_str().unwrap()).unwrap();
+        unsafe { libc::mknod(tmp.as_ptr(), libc::S_IRUSR, 0) };
+
+        unsafe { libc::exit(99) };
+    });
+}
+
