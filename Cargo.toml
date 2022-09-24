@@ -3,9 +3,14 @@ name = "oath"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = [
+    "bpfvm"
+]
+
 [dependencies]
 lazy_static = "1.4.0"
-libc = "0.2.132"
+libc = { version = "0.2.132", features = ["extra_traits"] }
 seccompiler = "0.3.0"
 thiserror = "1.0.35"
 
