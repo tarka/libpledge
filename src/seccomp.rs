@@ -17,7 +17,7 @@
 
 use crate::{
     errors::{Error, Result},
-    promises::{Filtered, Promise, PROMISES},
+    promises::{Filtered::{self, *}, Promise, PROMISES},
     ViolationAction,
 };
 use libc;
@@ -661,30 +661,96 @@ fn fcntl_lock() -> Result<WhitelistFrag> {
 }
 
 
+// The family parameter of socket() must be one of:
+//
+//   - AF_INET  (0x02)
+//   - AF_INET6 (0x0a)
+//
+// The type parameter of socket() will ignore:
+//
+//   - SOCK_CLOEXEC  (0x80000)
+//   - SOCK_NONBLOCK (0x00800)
+//
+// The type parameter of socket() must be one of:
+//
+//   - SOCK_STREAM (0x01)
+//   - SOCK_DGRAM  (0x02)
+//
+// The protocol parameter of socket() must be one of:
+//
+//   - 0
+//   - IPPROTO_ICMP (0x01)
+//   - IPPROTO_TCP  (0x06)
+//   - IPPROTO_UDP  (0x11)
+//
+// static privileged void AllowSocketInet(struct Filter *f) {
+//   static const struct sock_filter fragment[] = {
+//       /* L0*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_linux_socket, 0, 15 - 1),
+//       /* L1*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[0])),
+//       /* L2*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x02, 1, 0),
+//       /* L3*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x0a, 0, 14 - 4),
+//       /* L4*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[1])),
+//       /* L5*/ BPF_STMT(BPF_ALU | BPF_AND | BPF_K, ~0x80800),
+//       /* L6*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x01, 1, 0),
+//       /* L7*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x02, 0, 14 - 8),
+//       /* L8*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[2])),
+//       /* L9*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x00, 3, 0),
+//       /*L10*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x01, 2, 0),
+//       /*L11*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x06, 1, 0),
+//       /*L12*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x11, 0, 1),
+//       /*L13*/ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+//       /*L14*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(nr)),
+//       /*L15*/ /* next filter */
+//   };
+//   AppendFilter(f, PLEDGE(fragment));
+// }
+fn socket_inet() -> Result<WhitelistFrag> {
+    Ok((0, Vec::new()))
+}
+
+fn ioctl_int() -> Result<WhitelistFrag> {
+    Ok((0, Vec::new()))
+}
+
+fn getsockopt_restrict() -> Result<WhitelistFrag> {
+    Ok((0, Vec::new()))
+}
+
+fn setsockopt_restrict() -> Result<WhitelistFrag> {
+    Ok((0, Vec::new()))
+}
+
+
+
 fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     match filter {
-        Filtered::Whitelist(syscall) => whitelist_syscall(*syscall),
-        Filtered::FcntlStdio => fcntl_stdio(),
-        Filtered::MmapNoexec => mmap_noexec(),
-        Filtered::MprotectNoexec => mprotect_noexec(),
-        Filtered::SendtoAddrless => sendto_addrless(),
-        Filtered::IoctlRestrict => ioctl_restrict(),
-        Filtered::KillSelf => kill_self(),
-        Filtered::TkillSelf => tkill_self(),
-        Filtered::PrctlStdio => prctl_stdio(),
-        Filtered::CloneThread => clone_thread(),
-        Filtered::Prlimit64Stdio => prlimit64_stdio(),
-        Filtered::OpenReadonly => open_readonly(),
-        Filtered::OpenatReadonly => openat_readonly(),
-        Filtered::OpenWriteonly => open_writeonly(),
-        Filtered::OpenatWriteonly => openat_writeonly(),
-        Filtered::ChmodNobits => chmod_nobits(),
-        Filtered::FchmodNobits => fchmod_nobits(),
-        Filtered::FchmodatNobits => fchmodat_nobits(),
-        Filtered::OpenCreateonly => open_createonly(),
-        Filtered::OpenatCreateonly => openat_createonly(),
-        Filtered::CreatRestrict => create_restrict(),
-        Filtered::FcntlLock => fcntl_lock(),
+        Whitelist(syscall) => whitelist_syscall(*syscall),
+        FcntlStdio => fcntl_stdio(),
+        MmapNoexec => mmap_noexec(),
+        MprotectNoexec => mprotect_noexec(),
+        SendtoAddrless => sendto_addrless(),
+        IoctlRestrict => ioctl_restrict(),
+        KillSelf => kill_self(),
+        TkillSelf => tkill_self(),
+        PrctlStdio => prctl_stdio(),
+        CloneThread => clone_thread(),
+        Prlimit64Stdio => prlimit64_stdio(),
+        OpenReadonly => open_readonly(),
+        OpenatReadonly => openat_readonly(),
+        OpenWriteonly => open_writeonly(),
+        OpenatWriteonly => openat_writeonly(),
+        ChmodNobits => chmod_nobits(),
+        FchmodNobits => fchmod_nobits(),
+        FchmodatNobits => fchmodat_nobits(),
+        OpenCreateonly => open_createonly(),
+        OpenatCreateonly => openat_createonly(),
+        CreatRestrict => create_restrict(),
+        FcntlLock => fcntl_lock(),
+        SocketInet => socket_inet(),
+        IoctlInet => ioctl_int(),
+        GetsockoptRestrict => getsockopt_restrict(),
+        SetsockoptRestrict => setsockopt_restrict(),
+
     }
 }
 
@@ -733,8 +799,7 @@ pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Re
     // See https://github.com/rust-vmm/seccompiler/issues/42
     let mut btrules: BTreeMap<libc::c_long, Vec<Rule>> = BTreeMap::new();
     for (syscall, rules) in whitelist {
-        let vo = btrules.get_mut(&syscall);
-        match vo {
+        match btrules.get_mut(&syscall) {
             Some(v) => {
                 v.extend(rules);
             },

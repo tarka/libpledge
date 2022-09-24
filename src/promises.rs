@@ -29,6 +29,7 @@ pub enum Promise {
     DPath,
     FLock,
     FAttr,
+    Inet,
 }
 use Promise::*;
 
@@ -56,6 +57,10 @@ pub(crate) enum Filtered {
     OpenatCreateonly,
     CreatRestrict,
     FcntlLock,
+    SocketInet,
+    IoctlInet,
+    GetsockoptRestrict,
+    SetsockoptRestrict,
 }
 use Filtered::*;
 
@@ -270,6 +275,23 @@ lazy_static! {
                 Whitelist(libc::SYS_utimes),
                 Whitelist(libc::SYS_futimesat),
                 Whitelist(libc::SYS_utimensat),
+            }
+        ),
+        (
+            Inet,
+            vec! {
+                SocketInet,
+                Whitelist(libc::SYS_listen),
+                Whitelist(libc::SYS_bind),
+                Whitelist(libc::SYS_sendto),
+                Whitelist(libc::SYS_connect),
+                Whitelist(libc::SYS_accept),
+                Whitelist(libc::SYS_accept4),
+                IoctlInet,
+                GetsockoptRestrict,
+                SetsockoptRestrict,
+                Whitelist(libc::SYS_getpeername),
+                Whitelist(libc::SYS_getsockname),
             }
         ),
     ]);
