@@ -1,4 +1,4 @@
-use std::{result, array::TryFromSliceError};
+use std::{array::TryFromSliceError, result};
 use thiserror::Error;
 
 #[derive(Debug, Error)]

@@ -1,3 +1,5 @@
+
+mod bpf;
 mod errors;
 mod vm;
 
