@@ -852,10 +852,97 @@ mod tests {
 
         let ret = vm.run(&data).unwrap();
 
-        let action = ret & SECCOMP_RET_ACTION;
+        let action = ret & SECCOMP_RET_ACTION_FULL;
         let val = ret & SECCOMP_RET_DATA;
         assert!(action == SECCOMP_RET_ERRNO);
         assert!(val == 999, "Failed, ret = 0x{:x}", ret);
+    }
+
+    #[test_log::test]
+    fn stdio_personality_killed() {
+        let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
+        let mut vm = BpfVM::new(prog).unwrap();
+
+        let sc_data = libc::seccomp_data {
+            nr: libc::SYS_personality as i32,
+            arch: AUDIT_ARCH_X86_64,
+            instruction_pointer: 0,
+            args: [0;6]
+        };
+        let data = any_to_data(&sc_data);
+
+        let ret = vm.run(&data).unwrap();
+
+        let action = ret & SECCOMP_RET_ACTION_FULL;
+        assert!(action == SECCOMP_RET_KILL_PROCESS, "Action is 0x{:x}", action);
+    }
+
+
+    #[test_log::test]
+    fn stdio_time_ok() {
+        let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
+        let mut vm = BpfVM::new(prog).unwrap();
+
+        let sc_data = libc::seccomp_data {
+            nr: libc::SYS_gettimeofday as i32,
+            arch: AUDIT_ARCH_X86_64,
+            instruction_pointer: 0,
+            args: [0;6]
+        };
+        let data = any_to_data(&sc_data);
+
+        let ret = vm.run(&data).unwrap();
+
+        let action = ret & SECCOMP_RET_ACTION_FULL;
+        assert!(action == SECCOMP_RET_ALLOW, "Action is 0x{:x}", action);
+    }
+
+
+    #[test_log::test]
+    fn no_fcntl() {
+
+        let prog = promises_to_prog(vec![StdIO, CPath],
+                                    ViolationAction::KillProcess).unwrap();
+        let mut vm = BpfVM::new(prog).unwrap();
+
+        let sc_data = libc::seccomp_data {
+            nr: libc::SYS_fcntl as i32,
+            arch: AUDIT_ARCH_X86_64,
+            instruction_pointer: 0,
+            args: [69, libc::F_GETLK as u64, 0, 0, 0, 0]
+        };
+        let data = any_to_data(&sc_data);
+
+        let ret = vm.run(&data).unwrap();
+
+        pledge(vec![StdIO, CPath]).unwrap();
+
+        let action = ret & SECCOMP_RET_ACTION_FULL;
+        assert!(action == SECCOMP_RET_KILL_PROCESS, "Action is 0x{:x}", action);
+    }
+
+
+    #[test_log::test]
+    fn fcntl_ok() {
+
+        let prog = promises_to_prog(vec![StdIO, CPath, FLock],
+                                    ViolationAction::KillProcess).unwrap();
+        let mut vm = BpfVM::new(prog).unwrap();
+
+        let sc_data = libc::seccomp_data {
+            nr: libc::SYS_fcntl as i32,
+            arch: AUDIT_ARCH_X86_64,
+            instruction_pointer: 0,
+            args: [69, libc::F_GETLK as u64, 0, 0, 0, 0]
+        };
+        let data = any_to_data(&sc_data);
+
+        let ret = vm.run(&data).unwrap();
+
+        pledge(vec![StdIO, CPath]).unwrap();
+
+        let action = ret & SECCOMP_RET_ACTION_FULL;
+        assert!(action == SECCOMP_RET_ALLOW, "Action is 0x{:x}", action);
     }
 
 
