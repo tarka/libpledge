@@ -38,6 +38,17 @@ fn fetch_data(data: &[u32], off: usize, size: u16) -> Result<u32> {
     }
 }
 
+
+pub fn any_to_data<T: Sized>(p: &T) -> &[u32] {
+    unsafe {
+        ::std::slice::from_raw_parts(
+            (p as *const T) as *const u32,
+            ::std::mem::size_of::<T>(),
+        )
+    }
+}
+
+
 impl BpfVM {
     pub fn new(prog: FProg) -> Result<BpfVM> {
         if prog.len() > u16::MAX as usize {
@@ -360,15 +371,6 @@ mod tests {
         assert!(ret == 99);
     }
 
-    fn any_as_u32_slice<T: Sized>(p: &T) -> &[u32] {
-        unsafe {
-            ::std::slice::from_raw_parts(
-                (p as *const T) as *const u32,
-                ::std::mem::size_of::<T>(),
-            )
-        }
-    }
-
     #[test_log::test]
     fn test_seccomp_data_conv() {
 
@@ -378,7 +380,7 @@ mod tests {
             instruction_pointer: 3,
             args: [4,5,6,7,8,9]
         };
-        let data = any_as_u32_slice(&sc_data);
+        let data = any_to_data(&sc_data);
 
         let prog = vec! [
             // NR
