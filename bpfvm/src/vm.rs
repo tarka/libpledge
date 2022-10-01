@@ -19,12 +19,12 @@ fn fetch_u32(data: &[u32], off: usize) -> Result<u32> {
     Ok(data[off])
 }
 
-fn fetch_u16(data: &[u32], off: usize) -> Result<u32> {
+fn fetch_u16(_data: &[u32], _off: usize) -> Result<u32> {
     // FIXME: Not supported by seccomp, implement later if needed
     Err(Error::UnsupportedDataOffset)
 }
 
-fn fetch_u8(data: &[u32], off: usize) -> Result<u32> {
+fn fetch_u8(_data: &[u32], _off: usize) -> Result<u32> {
     // FIXME: Not supported by seccomp, implement later if needed
     Err(Error::UnsupportedDataOffset)
 }
@@ -75,15 +75,15 @@ impl BpfVM {
     fn fetch_src(&self, src: u16, curr: &sock_filter) -> Result<u32> {
         match src as u32 {
             libc::BPF_K => {
-                info!("Src is K: {}", curr.k);
+                info!("Src is K: 0x{:x}", curr.k);
                 return Ok(curr.k);
             }
             libc::BPF_X => {
-                info!("Src is IDX: {}", self.idx);
+                info!("Src is IDX: 0x{:x}", self.idx);
                 return Ok(self.idx);
             }
             BPF_A => {
-                info!("Src is ACC: {}", self.acc);
+                info!("Src is ACC: 0x{:x}", self.acc);
                 return Ok(self.acc);
             }
             _ => return Err(Error::InvalidInstructionCode(curr.code)),
@@ -92,7 +92,7 @@ impl BpfVM {
 
     pub fn execute(&mut self, data: &[u32]) -> Result<Option<u32>> {
         let curr = self.prog[self.pc];
-        info!("Executing line {}: {:?}", self.pc, curr);
+        info!("Executing line 0x{:x}: {:x?}", self.pc, curr);
 
         self.pc += 1;
 
@@ -102,7 +102,7 @@ impl BpfVM {
         let op = curr.code & 0xf0; // ALU/JMP op
         let src = curr.code & 0x08; // K or idx
 
-        info!("Executing instruction {}", inst);
+        info!("Executing instruction 0x{:x}", inst);
         match inst as u32 {
             libc::BPF_LD => {
                 self.acc = match mode {
@@ -113,7 +113,7 @@ impl BpfVM {
                     libc::BPF_LEN => data.len() as u32,
                     _ => return Err(Error::InvalidInstructionCode(curr.code)),
                 };
-                info!("Loaded value {} into ACC", self.acc);
+                info!("Loaded value 0x{:x} into ACC", self.acc);
             }
             libc::BPF_LDX => {
                 self.idx = match mode {
@@ -122,7 +122,7 @@ impl BpfVM {
                     libc::BPF_LEN => data.len() as u32,
                     _ => return Err(Error::InvalidInstructionCode(curr.code)),
                 };
-                info!("Loaded value {} into IDX", self.idx);
+                info!("Loaded value 0x{:x} into IDX", self.idx);
             }
             libc::BPF_ST => {
                 self.mem[curr.k as usize] = self.acc;
@@ -134,43 +134,43 @@ impl BpfVM {
                 let sval = self.fetch_src(src, &curr)?;
                 self.acc = match op as u32 {
                     libc::BPF_ADD => {
-                        info!("Executing ADD with {}", sval);
+                        info!("Executing ADD with 0x{:x}", sval);
                         self.acc + sval
                     }
                     libc::BPF_SUB => {
-                        info!("Executing SUB with {}", sval);
+                        info!("Executing SUB with 0x{:x}", sval);
                         self.acc - sval
                     }
                     libc::BPF_MUL => {
-                        info!("Executing MUL with {}", sval);
+                        info!("Executing MUL with 0x{:x}", sval);
                         self.acc * sval
                     }
                     libc::BPF_DIV => {
-                        info!("Executing DIV with {}", sval);
+                        info!("Executing DIV with 0x{:x}", sval);
                         self.acc / sval
                     }
                     libc::BPF_OR => {
-                        info!("Executing OR with {}", sval);
+                        info!("Executing OR with 0x{:x}", sval);
                         self.acc | sval
                     }
                     libc::BPF_AND => {
-                        info!("Executing AND with {}", sval);
+                        info!("Executing AND with 0x{:x}", sval);
                         self.acc & sval
                     }
                     libc::BPF_LSH => {
-                        info!("Executing LSH with {}", sval);
+                        info!("Executing LSH with 0x{:x}", sval);
                         self.acc << sval
                     }
                     libc::BPF_RSH => {
-                        info!("Executing RSH with {}", sval);
+                        info!("Executing RSH with 0x{:x}", sval);
                         self.acc >> sval
                     }
                     libc::BPF_MOD => {
-                        info!("Executing MOD  with {}", sval);
+                        info!("Executing MOD  with 0x{:x}", sval);
                         self.acc % sval
                     }
                     libc::BPF_XOR => {
-                        info!("Executing XOR with {}", sval);
+                        info!("Executing XOR with 0x{:x}", sval);
                         self.acc ^ sval
                     }
                     libc::BPF_NEG => {
@@ -183,42 +183,42 @@ impl BpfVM {
             libc::BPF_JMP => {
                 match op as u32 {
                     libc::BPF_JA => {
-                        info!("JA with {}", curr.k);
+                        info!("JA with 0x{:x}", curr.k);
                         self.pc += curr.k as usize;
                     }
                     libc::BPF_JEQ => {
                         if self.acc == curr.k {
-                            info!("JEQ: {} == {} -> {}", self.acc, curr.k, curr.jt);
+                            info!("JEQ: 0x{:x} == 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jt);
                             self.pc += curr.jt as usize;
                         } else {
-                            info!("JEQ: {} != {} -> {}", self.acc, curr.k, curr.jf);
+                            info!("JEQ: 0x{:x} != 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jf);
                             self.pc += curr.jf as usize;
                         }
                     }
                     libc::BPF_JGT => {
                         if self.acc > curr.k {
-                            info!("JGT: {} > {} -> {}", self.acc, curr.k, curr.jt);
+                            info!("JGT: 0x{:x} > 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jt);
                             self.pc += curr.jt as usize;
                         } else {
-                            info!("JGT: {} ! > {} -> {}", self.acc, curr.k, curr.jf);
+                            info!("JGT: 0x{:x} ! > 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jf);
                             self.pc += curr.jf as usize;
                         }
                     }
                     libc::BPF_JGE => {
                         if self.acc >= curr.k {
-                            info!("JGE: {} >= {} -> {}", self.acc, curr.k, curr.jt);
+                            info!("JGE: 0x{:x} >= 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jt);
                             self.pc += curr.jt as usize;
                         } else {
-                            info!("JGE: {} ! >= {} -> {}", self.acc, curr.k, curr.jf);
+                            info!("JGE: 0x{:x} ! >= 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jf);
                             self.pc += curr.jf as usize;
                         }
                     }
                     libc::BPF_JSET => {
                         if (self.acc & curr.k) > 0 {
-                            info!("JGE: {} & {} -> {}", self.acc, curr.k, curr.jt);
+                            info!("JGE: 0x{:x} & 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jt);
                             self.pc += curr.jt as usize;
                         } else {
-                            info!("JGE: {} ! & {} -> {}", self.acc, curr.k, curr.jf);
+                            info!("JGE: 0x{:x} ! & 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jf);
                             self.pc += curr.jf as usize;
                         }
                     }
@@ -228,7 +228,7 @@ impl BpfVM {
             libc::BPF_RET => {
                 let rsrc = curr.code & 0x18;
                 let sval = self.fetch_src(rsrc, &curr)?;
-                info!("Executing RET with {}", sval);
+                info!("Executing RET with 0x{:x}", sval);
                 return Ok(Some(sval));
             }
             libc::BPF_MISC => return Err(Error::UnsupportedInstruction(inst)),
@@ -245,7 +245,7 @@ impl BpfVM {
 
         while self.pc < self.prog.len() {
             if let Some(r) = self.execute(data)? {
-                info!("execute() returned value {}; terminating", r);
+                info!("execute() returned value 0x{:x}; terminating", r);
                 return Ok(r);
             }
         }
@@ -454,7 +454,7 @@ mod tests {
 
 
         let ret = vm.run(&data).unwrap();
-        assert!(ret == 0, "Failed, ret = {}", ret);
+        assert!(ret == 0, "Failed, ret = 0x{:x}", ret);
     }
 
 }

@@ -1,6 +1,7 @@
 
 mod bpf;
 mod errors;
+pub mod seccomp;
 mod vm;
 
 pub use errors::{Error, Result};

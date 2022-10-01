@@ -11,9 +11,11 @@ members = [
 [dependencies]
 lazy_static = "1.4.0"
 libc = { version = "0.2.132", features = ["extra_traits"] }
-seccompiler = "0.3.0"
+seccompiler = { path = "../../software/seccompiler" }
 thiserror = "1.0.35"
 
 [dev-dependencies]
 nix = "0.25.0"
 bpfvm = { path = "bpfvm" }
+test-log = "0.2.11"
+env_logger = "0.9.1"

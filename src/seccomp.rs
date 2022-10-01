@@ -775,7 +775,7 @@ pub fn pledge(promises: Vec<Promise>) -> Result<()> {
 }
 
 
-pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> {
+fn promises_to_prog(promises: Vec<Promise>, violation: ViolationAction) -> Result<BpfProgram> {
     // Convert all promises into filter specs.
     let defaults = vec![Promise::Default];
     let filters = defaults
@@ -817,7 +817,44 @@ pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Re
     )?;
 
     let bpf_prog: BpfProgram = sf.try_into()?;
+
+    Ok(bpf_prog)
+}
+
+pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> {
+    let bpf_prog = promises_to_prog(promises, violation)?;
     apply_filter(&bpf_prog)?;
 
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Promise::*, ViolationAction};
+    use bpfvm::{BpfVM, any_to_data, seccomp::*};
+    use test_log;
+
+
+    #[test_log::test]
+    fn stdio_personality_errno() {
+        let prog = promises_to_prog(vec![StdIO], ViolationAction::Errno(999)).unwrap();
+        let mut vm = BpfVM::new(prog).unwrap();
+
+        let sc_data = libc::seccomp_data {
+            nr: 1,
+            arch: 2,
+            instruction_pointer: 3,
+            args: [4,5,6,7,8,9]
+        };
+        let data = any_to_data(&sc_data);
+
+        let ret = vm.run(&data).unwrap();
+
+        //assert!(ret & SECCOMP_RET_ACTION == SECCOMP_RET_ERRNO);
+        assert!(ret == 999, "Failed, ret = {:x}", ret);
+    }
+
+
 }
