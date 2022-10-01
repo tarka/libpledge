@@ -7,6 +7,16 @@ use libc::sock_filter;
 
 use crate::errors::{Error, Result};
 
+// See <linux-src>/include/uapi/linux/audit.h
+pub const AUDIT_ARCH_64BIT: u32 = 0x80000000;
+pub const AUDIT_ARCH_LE: u32 = 0x40000000;
+pub const EM_X86_64: u32 = 62;
+pub const EM_AARCH64: u32 = 183;
+
+pub const AUDIT_ARCH_X86_64: u32 = EM_X86_64 | AUDIT_ARCH_64BIT | AUDIT_ARCH_LE;
+pub const AUDIT_ARCH_AARCH64: u32 = EM_AARCH64 | AUDIT_ARCH_64BIT | AUDIT_ARCH_LE;
+
+
 #[repr(u32)]
 pub enum Size {
     U32 = libc::BPF_W,
