@@ -1,9 +1,9 @@
 use libc::sock_filter;
 use log::{error, info};
 
+use crate::{BPFProg, RunData};
 use crate::errors::{Error, Result};
 
-pub type FProg = Vec<sock_filter>;
 const MEMSIZE: usize = libc::BPF_MEMWORDS as usize;
 const BPF_A: u32 = 0x10; // Not defined in libc for some reason.
 
@@ -15,23 +15,23 @@ pub struct BpfVM {
     pub prog: Vec<sock_filter>,
 }
 
-fn fetch_u32(data: &[u32], off: usize) -> Result<u32> {
+fn fetch_u32(data: RunData, off: usize) -> Result<u32> {
     // Offsets are in bytes, data is in words
     let woff = off / 4;
     Ok(data[woff])
 }
 
-fn fetch_u16(_data: &[u32], _off: usize) -> Result<u32> {
+fn fetch_u16(_data: RunData, _off: usize) -> Result<u32> {
     // FIXME: Not supported by seccomp, implement later if needed
     Err(Error::UnsupportedDataOffset)
 }
 
-fn fetch_u8(_data: &[u32], _off: usize) -> Result<u32> {
+fn fetch_u8(_data: RunData, _off: usize) -> Result<u32> {
     // FIXME: Not supported by seccomp, implement later if needed
     Err(Error::UnsupportedDataOffset)
 }
 
-fn fetch_data(data: &[u32], off: usize, size: u16) -> Result<u32> {
+fn fetch_data(data: RunData, off: usize, size: u16) -> Result<u32> {
     match size as u32 {
         libc::BPF_W => fetch_u32(data, off),
         libc::BPF_H => fetch_u16(data, off),
@@ -41,7 +41,7 @@ fn fetch_data(data: &[u32], off: usize, size: u16) -> Result<u32> {
 }
 
 
-pub fn any_to_data<T: Sized>(p: &T) -> &[u32] {
+pub fn any_to_data<T: Sized>(p: &T) -> RunData {
     unsafe {
         ::std::slice::from_raw_parts(
             (p as *const T) as *const u32,
@@ -52,7 +52,7 @@ pub fn any_to_data<T: Sized>(p: &T) -> &[u32] {
 
 
 impl BpfVM {
-    pub fn new(prog: FProg) -> Result<BpfVM> {
+    pub fn new(prog: BPFProg) -> Result<BpfVM> {
         if prog.len() > u16::MAX as usize {
             return Err(Error::ProgramTooLong(prog.len()));
         }
@@ -92,7 +92,7 @@ impl BpfVM {
         }
     }
 
-    pub fn execute(&mut self, data: &[u32]) -> Result<Option<u32>> {
+    pub fn execute(&mut self, data: RunData) -> Result<Option<u32>> {
         let curr = self.prog[self.pc];
         info!("Executing line 0x{:x}: {:x?}", self.pc, curr);
 
@@ -240,7 +240,7 @@ impl BpfVM {
         Ok(None)
     }
 
-    pub fn run(&mut self, data: &[u32]) -> Result<u32> {
+    pub fn run(&mut self, data: RunData) -> Result<u32> {
         info!("Starting VM");
 
         self.reset()?;

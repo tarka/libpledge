@@ -833,116 +833,72 @@ pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Re
 mod tests {
     use super::*;
     use crate::{Promise::*, ViolationAction};
-    use bpfvm::{BpfVM, any_to_data, seccomp::*};
+    use bpfvm::seccomp::*;
+    use libc::seccomp_data;
     use test_log;
 
+    fn syscall(call: i64, args: [u64; 6]) -> seccomp_data {
+        libc::seccomp_data {
+            nr: call as i32,
+            arch: AUDIT_ARCH_X86_64,
+            instruction_pointer: 0,
+            args: args
+        }
+    }
 
     #[test_log::test]
     fn stdio_personality_errno() {
         let prog = promises_to_prog(vec![StdIO], ViolationAction::Errno(999)).unwrap();
-        let mut vm = BpfVM::new(prog).unwrap();
+        let sc_data = syscall(libc::SYS_personality, [0;6]);
 
-        let sc_data = libc::seccomp_data {
-            nr: libc::SYS_personality as i32,
-            arch: AUDIT_ARCH_X86_64,
-            instruction_pointer: 0,
-            args: [0;6]
-        };
-        let data = any_to_data(&sc_data);
+        let ret = run_seccomp(prog, sc_data).unwrap();
 
-        let ret = vm.run(&data).unwrap();
-
-        let action = ret & SECCOMP_RET_ACTION_FULL;
-        let val = ret & SECCOMP_RET_DATA;
-        assert!(action == SECCOMP_RET_ERRNO);
-        assert!(val == 999, "Failed, ret = 0x{:x}", ret);
+        assert!(ret == Return::Errno(999), "Failed, ret = 0x{:?}", ret);
     }
 
     #[test_log::test]
     fn stdio_personality_killed() {
         let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
-        let mut vm = BpfVM::new(prog).unwrap();
+        let sc_data = syscall(libc::SYS_personality, [0;6]);
 
-        let sc_data = libc::seccomp_data {
-            nr: libc::SYS_personality as i32,
-            arch: AUDIT_ARCH_X86_64,
-            instruction_pointer: 0,
-            args: [0;6]
-        };
-        let data = any_to_data(&sc_data);
+        let ret = run_seccomp(prog, sc_data).unwrap();
 
-        let ret = vm.run(&data).unwrap();
-
-        let action = ret & SECCOMP_RET_ACTION_FULL;
-        assert!(action == SECCOMP_RET_KILL_PROCESS, "Action is 0x{:x}", action);
+        assert!(ret == Return::KillProcess, "Failed, ret = 0x{:?}", ret);
     }
 
 
     #[test_log::test]
     fn stdio_time_ok() {
         let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
-        let mut vm = BpfVM::new(prog).unwrap();
+        let sc_data = syscall(libc::SYS_gettimeofday, [0;6]);
 
-        let sc_data = libc::seccomp_data {
-            nr: libc::SYS_gettimeofday as i32,
-            arch: AUDIT_ARCH_X86_64,
-            instruction_pointer: 0,
-            args: [0;6]
-        };
-        let data = any_to_data(&sc_data);
+        let ret = run_seccomp(prog, sc_data).unwrap();
 
-        let ret = vm.run(&data).unwrap();
-
-        let action = ret & SECCOMP_RET_ACTION_FULL;
-        assert!(action == SECCOMP_RET_ALLOW, "Action is 0x{:x}", action);
+        assert!(ret == Return::Allow, "Failed, ret = 0x{:?}", ret);
     }
 
 
     #[test_log::test]
     fn no_fcntl() {
-
         let prog = promises_to_prog(vec![StdIO, CPath],
                                     ViolationAction::KillProcess).unwrap();
-        let mut vm = BpfVM::new(prog).unwrap();
+        let sc_data = syscall(libc::SYS_fcntl, [69, libc::F_GETLK as u64, 0, 0, 0, 0]);
 
-        let sc_data = libc::seccomp_data {
-            nr: libc::SYS_fcntl as i32,
-            arch: AUDIT_ARCH_X86_64,
-            instruction_pointer: 0,
-            args: [69, libc::F_GETLK as u64, 0, 0, 0, 0]
-        };
-        let data = any_to_data(&sc_data);
+        let ret = run_seccomp(prog, sc_data).unwrap();
 
-        let ret = vm.run(&data).unwrap();
-
-        pledge(vec![StdIO, CPath]).unwrap();
-
-        let action = ret & SECCOMP_RET_ACTION_FULL;
-        assert!(action == SECCOMP_RET_KILL_PROCESS, "Action is 0x{:x}", action);
+        assert!(ret == Return::KillProcess, "Failed, ret = 0x{:?}", ret);
     }
 
 
     #[test_log::test]
     fn fcntl_ok() {
-
         let prog = promises_to_prog(vec![StdIO, CPath, FLock],
                                     ViolationAction::KillProcess).unwrap();
-        let mut vm = BpfVM::new(prog).unwrap();
+        let sc_data = syscall(libc::SYS_fcntl, [69, libc::F_GETLK as u64, 0, 0, 0, 0]);
 
-        let sc_data = libc::seccomp_data {
-            nr: libc::SYS_fcntl as i32,
-            arch: AUDIT_ARCH_X86_64,
-            instruction_pointer: 0,
-            args: [69, libc::F_GETLK as u64, 0, 0, 0, 0]
-        };
-        let data = any_to_data(&sc_data);
+        let ret = run_seccomp(prog, sc_data).unwrap();
 
-        let ret = vm.run(&data).unwrap();
-
-        pledge(vec![StdIO, CPath]).unwrap();
-
-        let action = ret & SECCOMP_RET_ACTION_FULL;
-        assert!(action == SECCOMP_RET_ALLOW, "Action is 0x{:x}", action);
+        assert!(ret == Return::Allow, "Failed, ret = 0x{:?}", ret);
     }
 
 

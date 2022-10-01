@@ -1,3 +1,5 @@
+use crate::{BPFProg, BpfVM, any_to_data};
+use crate::errors::{Error, Result};
 
 
 // See <linux-src>/include/uapi/linux/audit.h
@@ -25,3 +27,50 @@ pub const SECCOMP_RET_ALLOW       : u32 = 0x7fff0000; /* allow */
 pub const SECCOMP_RET_ACTION_FULL: u32 = 0xffff0000;
 pub const SECCOMP_RET_ACTION     : u32 = 0x7fff0000;
 pub const SECCOMP_RET_DATA       : u32 = 0x0000ffff;
+
+
+// Currently maps 1-1 to SeccompAction
+#[derive(Eq, PartialEq, Debug)]
+pub enum Return {
+    /// Kill the process.
+    KillProcess,
+    /// Kill the thread.
+    KillThread,
+    /// Sends `SIGSYS` to the calling process.
+    Trap,
+    /// Returns from syscall with specified error number.
+    Errno(u32),
+    /// Notifies tracing process of the caller with respective number.
+    Trace(u32),
+    /// Allows syscall after logging it.
+    Log,
+    /// Allows syscall.
+    Allow,
+}
+
+impl TryFrom<u32> for Return {
+    type Error = Error;
+    fn try_from(ret: u32) -> Result<Self> {
+        let action = ret & SECCOMP_RET_ACTION_FULL;
+        let val = ret & SECCOMP_RET_DATA;
+
+        match action {
+            SECCOMP_RET_KILL_PROCESS => Ok(Return::KillProcess),
+            SECCOMP_RET_KILL_THREAD  => Ok(Return::KillThread),
+            SECCOMP_RET_TRAP         => Ok(Return::Trap),
+            SECCOMP_RET_ERRNO        => Ok(Return::Errno(val)),
+            SECCOMP_RET_TRACE        => Ok(Return::Trace(val)),
+            SECCOMP_RET_LOG          => Ok(Return::Log),
+            SECCOMP_RET_ALLOW        => Ok(Return::Allow),
+            _ => Err(Error::UnsupportedReturn(ret)),
+        }
+    }
+
+}
+
+
+
+pub fn run_seccomp(prog: BPFProg, syscall: libc::seccomp_data) -> Result<Return> {
+    let code = BpfVM::new(prog)?.run(any_to_data(&syscall))?;
+    Return::try_from(code)
+}
