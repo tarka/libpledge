@@ -843,17 +843,19 @@ mod tests {
         let mut vm = BpfVM::new(prog).unwrap();
 
         let sc_data = libc::seccomp_data {
-            nr: 1,
-            arch: 2,
-            instruction_pointer: 3,
-            args: [4,5,6,7,8,9]
+            nr: libc::SYS_personality as i32,
+            arch: AUDIT_ARCH_X86_64,
+            instruction_pointer: 0,
+            args: [0;6]
         };
         let data = any_to_data(&sc_data);
 
         let ret = vm.run(&data).unwrap();
 
-        //assert!(ret & SECCOMP_RET_ACTION == SECCOMP_RET_ERRNO);
-        assert!(ret == 999, "Failed, ret = {:x}", ret);
+        let action = ret & SECCOMP_RET_ACTION;
+        let val = ret & SECCOMP_RET_DATA;
+        assert!(action == SECCOMP_RET_ERRNO);
+        assert!(val == 999, "Failed, ret = 0x{:x}", ret);
     }
 
 

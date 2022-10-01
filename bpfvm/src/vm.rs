@@ -16,7 +16,9 @@ pub struct BpfVM {
 }
 
 fn fetch_u32(data: &[u32], off: usize) -> Result<u32> {
-    Ok(data[off])
+    // Offsets are in bytes, data is in words
+    let woff = off / 4;
+    Ok(data[woff])
 }
 
 fn fetch_u16(_data: &[u32], _off: usize) -> Result<u32> {
