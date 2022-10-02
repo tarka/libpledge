@@ -16,7 +16,7 @@ thiserror = "1.0.35"
 
 [dev-dependencies]
 nix = "0.25.0"
-bpfvm = { path = "bpfvm" }
+bpfvm = { version = "0.1.0", path = "bpfvm" }
 log = "0.4.17"
 test-log = "0.2.11"
 env_logger = "0.9.1"
