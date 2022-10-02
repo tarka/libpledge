@@ -1,4 +1,4 @@
-mod bpf;
+pub mod bpf;
 mod errors;
 pub mod seccomp;
 mod vm;

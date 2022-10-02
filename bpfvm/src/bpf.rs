@@ -1,4 +1,3 @@
-#![allow(warnings, unused)]
 
 pub const BPF_A: u32 = 0x10; // Not defined in libc for some reason.
 
@@ -62,13 +61,6 @@ pub enum Instr {
     JMP = libc::BPF_JMP,
     RET = libc::BPF_RET,
 }
-
-pub struct CmpJmp {
-    cmp: u32,
-    jtrue: u8,
-    jfalse: u8,
-}
-
 
 
 #[cfg(test)]
