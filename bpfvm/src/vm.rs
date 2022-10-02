@@ -1,11 +1,10 @@
 use libc::sock_filter;
 use log::{error, info};
 
-use crate::{BPFProg, RunData};
 use crate::errors::{Error, Result};
+use crate::{BPFProg, RunData, bpf::BPF_A};
 
 const MEMSIZE: usize = libc::BPF_MEMWORDS as usize;
-const BPF_A: u32 = 0x10; // Not defined in libc for some reason.
 
 pub struct BpfVM {
     pub pc: usize,
@@ -40,16 +39,11 @@ fn fetch_data(data: RunData, off: usize, size: u16) -> Result<u32> {
     }
 }
 
-
 pub fn any_to_data<T: Sized>(p: &T) -> RunData {
     unsafe {
-        ::std::slice::from_raw_parts(
-            (p as *const T) as *const u32,
-            ::std::mem::size_of::<T>(),
-        )
+        ::std::slice::from_raw_parts((p as *const T) as *const u32, ::std::mem::size_of::<T>())
     }
 }
-
 
 impl BpfVM {
     pub fn new(prog: BPFProg) -> Result<BpfVM> {
@@ -202,7 +196,10 @@ impl BpfVM {
                             info!("JGT: 0x{:x} > 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jt);
                             self.pc += curr.jt as usize;
                         } else {
-                            info!("JGT: 0x{:x} ! > 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jf);
+                            info!(
+                                "JGT: 0x{:x} ! > 0x{:x} -> 0x{:x}",
+                                self.acc, curr.k, curr.jf
+                            );
                             self.pc += curr.jf as usize;
                         }
                     }
@@ -211,7 +208,10 @@ impl BpfVM {
                             info!("JGE: 0x{:x} >= 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jt);
                             self.pc += curr.jt as usize;
                         } else {
-                            info!("JGE: 0x{:x} ! >= 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jf);
+                            info!(
+                                "JGE: 0x{:x} ! >= 0x{:x} -> 0x{:x}",
+                                self.acc, curr.k, curr.jf
+                            );
                             self.pc += curr.jf as usize;
                         }
                     }
@@ -220,7 +220,10 @@ impl BpfVM {
                             info!("JGE: 0x{:x} & 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jt);
                             self.pc += curr.jt as usize;
                         } else {
-                            info!("JGE: 0x{:x} ! & 0x{:x} -> 0x{:x}", self.acc, curr.k, curr.jf);
+                            info!(
+                                "JGE: 0x{:x} ! & 0x{:x} -> 0x{:x}",
+                                self.acc, curr.k, curr.jf
+                            );
                             self.pc += curr.jf as usize;
                         }
                     }
@@ -260,6 +263,8 @@ impl BpfVM {
 mod tests {
     use super::*;
     use test_log;
+
+    const WORDS: u32 = 4;
 
     fn bpf_stmt(code: u32, val: u32) -> sock_filter {
         sock_filter {
@@ -302,7 +307,7 @@ mod tests {
     #[test_log::test]
     fn test_load_data() {
         let prog = vec![
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 1),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 1*WORDS),
             bpf_stmt(libc::BPF_RET | BPF_A, 0),
         ];
         let mut vm = BpfVM::new(prog).unwrap();
@@ -314,7 +319,7 @@ mod tests {
     #[test_log::test]
     fn test_alu_mask() {
         let prog = vec![
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 2),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 2*WORDS),
             bpf_stmt(libc::BPF_ALU | libc::BPF_AND | libc::BPF_K, 0xF0),
             bpf_stmt(libc::BPF_RET | BPF_A, 0),
         ];
@@ -332,7 +337,7 @@ mod tests {
     #[test_log::test]
     fn test_alu_mul() {
         let prog = vec![
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 2),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 2*WORDS),
             bpf_stmt(libc::BPF_ALU | libc::BPF_MUL | libc::BPF_K, 2),
             bpf_stmt(libc::BPF_RET | BPF_A, 0),
         ];
@@ -375,88 +380,74 @@ mod tests {
 
     #[test_log::test]
     fn test_seccomp_data_conv() {
-
         let sc_data = libc::seccomp_data {
             nr: 1,
             arch: 2,
             instruction_pointer: 3,
-            args: [4,5,6,7,8,9]
+            args: [4, 5, 6, 7, 8, 9],
         };
         let data = any_to_data(&sc_data);
 
-        let prog = vec! [
+        let prog = vec![
             // NR
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 0),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 0*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 1, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 100),
-
             // arch
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 1),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 1*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 2, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 101),
-
             // inst_ptr
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 2),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 2*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 3, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 102),
-
             // args[0] = [0, 4]
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 3),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 3*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 0, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 103),
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 4),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 4*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 4, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 104),
-
             // args[0] = [0, 5]
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 5),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 5*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 0, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 105),
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 6),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 6*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 5, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 106),
-
             // args[0] = [0, 6]
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 7),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 7*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 0, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 107),
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 8),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 8*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 6, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 108),
-
             // args[0] = [0, 7]
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 9),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 9*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 0, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 109),
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 10),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 10*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 7, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 110),
-
             // args[0] = [0, 8]
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 11),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 11*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 0, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 111),
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 12),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 12*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 8, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 112),
-
             // args[0] = [0, 9]
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 13),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 13*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 0, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 113),
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 14),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 14*WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 9, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 114),
-
-
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 0),
-
         ];
         let mut vm = BpfVM::new(prog).unwrap();
-
 
         let ret = vm.run(&data).unwrap();
         assert!(ret == 0, "Failed, ret = 0x{:x}", ret);
     }
-
 }
