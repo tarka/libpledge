@@ -64,16 +64,16 @@ fn get_label(labels: &HashMap<&str, usize>, label: &str) -> Result<usize> {
     Ok(*linenum)
 }
 
-fn to_sock_filter(op: &Operation, labels: &HashMap<&str, usize>) -> Result<sock_filter> {
+fn to_sock_filter(linenum: usize, op: &Operation, labels: &HashMap<&str, usize>) -> Result<sock_filter> {
     let sf = match op {
         JumpTo(l) => {
-            let linenum = get_label(labels, l)?;
-            bpf_jmp(JmpOp::JA, (linenum - 1) as u32, 0, 0)
+            let targetline = get_label(labels, l)? - linenum - 1;
+            bpf_jmp(JmpOp::JA, targetline as u32, 0, 0)
         },
         Jump(op, cmp, ltrue, lfalse) => {
-            let lt = get_label(labels, ltrue)?;
-            let lf = get_label(labels, lfalse)?;
-            bpf_jmp(*op, *cmp, (lt - 1) as u8, (lf - 1) as u8)
+            let lt = get_label(labels, ltrue)? - linenum - 1;
+            let lf = get_label(labels, lfalse)? - linenum - 1;
+            bpf_jmp(*op, *cmp, lt as u8, lf as u8)
         },
         Load(mode, val) => bpf_ld(*mode, *val),
         LoadIdx(mode, val) => bpf_ldx(*mode, *val),
@@ -96,19 +96,21 @@ pub fn compile(prog: &Program) -> Result<Vec<sock_filter>> {
 
     let opcodes = prog.into_iter()
         .filter(|op| !matches!(op, Label(_)))
-        .map(|op| to_sock_filter(op, &labels))
+        .enumerate()
+        .map(|(linenum, op)| to_sock_filter(linenum, op, &labels))
         .collect();
+
     opcodes
-
 }
-
 
 
 #[cfg(test)]
 mod tests {
     use test_log;
     use super::*;
-    use crate::BpfVM;
+    use crate::{any_to_data, BpfVM};
+
+    const WORDS: u32 = 4;
 
     #[test_log::test]
     fn test_simple_jump() {
@@ -116,6 +118,25 @@ mod tests {
             JumpTo("FAIL"),
             Label("OK"), Return(Src::Const, 0),
             Label("FAIL"), Return(Src::Const, 99),
+        ];
+        let prog = compile(&asm).unwrap();
+
+        let mut vm = BpfVM::new(prog).unwrap();
+        let data = vec![];
+        let ret = vm.run(&data).unwrap();
+        assert!(ret == 99);
+    }
+
+    #[test_log::test]
+    fn test_ld_gt_ret() {
+        let asm = vec![
+            Load(Mode::IMM, 99),
+            Jump(JmpOp::JGT, 98, "ret_acc", "ret999"),
+            // Should skip this one
+            Label("ret999"),
+            Load(Mode::IMM, 999),
+            Label("ret_acc"),
+            Return(Src::Acc, 0),
         ];
         let prog = compile(&asm).unwrap();
 

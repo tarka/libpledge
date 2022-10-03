@@ -16,7 +16,7 @@
  */
 
 use libc::sock_filter;
-use log::{error, info};
+use log::{error, debug, info};
 
 use crate::errors::{Error, Result};
 use crate::{BPFProg, RunData, bpf::BPF_A};
@@ -115,7 +115,7 @@ impl BpfVM {
         let op = curr.code & 0xf0; // ALU/JMP op
         let src = curr.code & 0x08; // K or idx
 
-        info!("Executing instruction 0x{:x}", inst);
+        debug!("Executing instruction 0x{:x}", inst);
         match inst as u32 {
             libc::BPF_LD => {
                 self.acc = match mode {
