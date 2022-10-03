@@ -15,6 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+pub mod asm;
 pub mod bpf;
 mod errors;
 pub mod seccomp;

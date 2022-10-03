@@ -32,6 +32,8 @@ pub enum Error {
     UnsupportedDataOffset,
     #[error("Unknown BPF Instruction; {0:?}.")]
     UnknownInstruction(u16),
+    #[error("Unknown label reference; {0:?}.")]
+    UnknownLabelReference(String),
     #[error(transparent)]
     DataConversionError(#[from] TryFromSliceError),
 }

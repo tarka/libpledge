@@ -15,10 +15,13 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+use libc::sock_filter;
+
 pub const BPF_A: u32 = 0x10; // Not defined in libc for some reason.
 
 
 #[repr(u32)]
+#[derive(Eq, PartialEq, Debug)]
 pub enum WordSize {
     U32 = libc::BPF_W,
     U16 = libc::BPF_H,
@@ -26,6 +29,7 @@ pub enum WordSize {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Src {
     /// Contents of K instruction parameter
     Const = libc::BPF_K,
@@ -36,6 +40,7 @@ pub enum Src {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Mode {
     IMM = libc::BPF_IMM,
     ABS = libc::BPF_ABS,
@@ -45,6 +50,7 @@ pub enum Mode {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum AluOp {
     ADD = libc::BPF_ADD,
     SUB = libc::BPF_SUB,
@@ -59,6 +65,7 @@ pub enum AluOp {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum JmpOp {
     JA = libc::BPF_JA,
     JEQ = libc::BPF_JEQ,
@@ -68,6 +75,7 @@ pub enum JmpOp {
 }
 
 #[repr(u32)]
+#[derive(Eq, PartialEq, Debug)]
 pub enum Instr {
     LD = libc::BPF_LD,
     LDX = libc::BPF_LDX,
@@ -79,61 +87,61 @@ pub enum Instr {
 }
 
 
+pub fn bpf_stmt(code: u32, val: u32) -> sock_filter {
+    sock_filter {
+        code: code as u16,
+        jt: 0,
+        jf: 0,
+        k: val,
+    }
+}
+
+pub fn bpf_stmt_w(code: u32, val: u32) -> sock_filter {
+    bpf_stmt(code | WordSize::U32 as u32, val)
+}
+
+pub fn bpf_ld(mode: Mode, val: u32) -> sock_filter {
+    bpf_stmt_w(Instr::LD as u32 | mode as u32, val)
+}
+
+pub fn bpf_ldx(mode: Mode, val: u32) -> sock_filter {
+    bpf_stmt_w(Instr::LDX as u32 | mode as u32, val)
+}
+
+pub fn bpf_st(mode: Mode, val: u32) -> sock_filter {
+    bpf_stmt_w(Instr::ST as u32 | mode as u32, val)
+}
+
+pub fn bpf_stx(mode: Mode, val: u32) -> sock_filter {
+    bpf_stmt_w(Instr::STX as u32 | mode as u32, val)
+}
+
+pub fn bpf_alu(op: AluOp, src: Src, val: u32) -> sock_filter {
+    bpf_stmt_w(Instr::ALU as u32 | op as u32 | src as u32, val)
+}
+
+pub fn bpf_ret(retval: Src, val: u32) -> sock_filter {
+    bpf_stmt_w(Instr::RET as u32 | retval as u32, val)
+}
+
+pub fn bpf_jmp(op: JmpOp, k: u32, jt: u8, jf: u8) -> sock_filter {
+    let code = Instr::JMP as u32 | op as u32;
+    sock_filter {
+        code: code as u16,
+        jt,
+        jf,
+        k,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
-    use libc::sock_filter;
     use test_log;
     use super::*;
     use crate::{any_to_data, BpfVM};
 
     const WORDS: u32 = 4;
-
-    fn bpf_stmt(code: u32, val: u32) -> sock_filter {
-        sock_filter {
-            code: code as u16,
-            jt: 0,
-            jf: 0,
-            k: val,
-        }
-    }
-
-    fn bpf_stmt_w(code: u32, val: u32) -> sock_filter {
-        bpf_stmt(code | WordSize::U32 as u32, val)
-    }
-
-    fn bpf_ld(mode: Mode, val: u32) -> sock_filter {
-        bpf_stmt_w(Instr::LD as u32 | mode as u32, val)
-    }
-
-    fn bpf_ldx(mode: Mode, val: u32) -> sock_filter {
-        bpf_stmt_w(Instr::LDX as u32 | mode as u32, val)
-    }
-
-    fn bpf_st(mode: Mode, val: u32) -> sock_filter {
-        bpf_stmt_w(Instr::ST as u32 | mode as u32, val)
-    }
-
-    fn bpf_stx(mode: Mode, val: u32) -> sock_filter {
-        bpf_stmt_w(Instr::STX as u32 | mode as u32, val)
-    }
-
-    fn bpf_alu(op: AluOp, src: Src, val: u32) -> sock_filter {
-        bpf_stmt_w(Instr::ALU as u32 | op as u32 | src as u32, val)
-    }
-
-    fn bpf_ret(retval: Src, val: u32) -> sock_filter {
-        bpf_stmt_w(Instr::RET as u32 | retval as u32, val)
-    }
-
-    fn bpf_jmp(op: JmpOp, k: u32, jt: u8, jf: u8) -> sock_filter {
-        let code = Instr::JMP as u32 | op as u32;
-        sock_filter {
-            code: code as u16,
-            jt,
-            jf,
-            k,
-        }
-    }
 
     #[test_log::test]
     fn test_ret() {
