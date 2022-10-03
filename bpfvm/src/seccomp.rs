@@ -49,7 +49,7 @@ pub const SECCOMP_RET_DATA       : u32 = 0x0000ffff;
 
 // Currently maps 1-1 to SeccompAction
 #[derive(Eq, PartialEq, Debug)]
-pub enum Return {
+pub enum SeccompReturn {
     /// Kill the process.
     KillProcess,
     /// Kill the thread.
@@ -66,20 +66,21 @@ pub enum Return {
     Allow,
 }
 
-impl TryFrom<u32> for Return {
+impl TryFrom<u32> for SeccompReturn {
     type Error = Error;
     fn try_from(ret: u32) -> Result<Self> {
         let action = ret & SECCOMP_RET_ACTION_FULL;
         let val = ret & SECCOMP_RET_DATA;
+        use SeccompReturn::*;
 
         match action {
-            SECCOMP_RET_KILL_PROCESS => Ok(Return::KillProcess),
-            SECCOMP_RET_KILL_THREAD  => Ok(Return::KillThread),
-            SECCOMP_RET_TRAP         => Ok(Return::Trap),
-            SECCOMP_RET_ERRNO        => Ok(Return::Errno(val)),
-            SECCOMP_RET_TRACE        => Ok(Return::Trace(val)),
-            SECCOMP_RET_LOG          => Ok(Return::Log),
-            SECCOMP_RET_ALLOW        => Ok(Return::Allow),
+            SECCOMP_RET_KILL_PROCESS => Ok(KillProcess),
+            SECCOMP_RET_KILL_THREAD  => Ok(KillThread),
+            SECCOMP_RET_TRAP         => Ok(Trap),
+            SECCOMP_RET_ERRNO        => Ok(Errno(val)),
+            SECCOMP_RET_TRACE        => Ok(Trace(val)),
+            SECCOMP_RET_LOG          => Ok(Log),
+            SECCOMP_RET_ALLOW        => Ok(Allow),
             _ => Err(Error::UnsupportedReturn(ret)),
         }
     }
@@ -88,7 +89,7 @@ impl TryFrom<u32> for Return {
 
 
 
-pub fn run_seccomp(prog: BPFProg, syscall: libc::seccomp_data) -> Result<Return> {
+pub fn run_seccomp(prog: BPFProg, syscall: libc::seccomp_data) -> Result<SeccompReturn> {
     let code = BpfVM::new(prog)?.run(any_to_data(&syscall))?;
-    Return::try_from(code)
+    SeccompReturn::try_from(code)
 }
