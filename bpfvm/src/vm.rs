@@ -105,7 +105,7 @@ impl BpfVM {
 
     pub fn execute(&mut self, data: RunData) -> Result<Option<u32>> {
         let curr = self.prog[self.pc];
-        info!("Executing line 0x{:x}: {:x?}", self.pc, curr);
+        debug!("Executing line 0x{:x}: {:x?}", self.pc, curr);
 
         self.pc += 1;
 

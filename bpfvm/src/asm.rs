@@ -32,7 +32,7 @@ pub enum Operation<'a> {
     Alu(AluOp, Src, u32),
     Return(Src, u32),
     JumpTo(&'a str), // Special case JMP_JA
-    Jump(JmpOp, u32, &'a str, &'a str),
+    Jump(JmpOp, u32, Option<&'a str>, Option<&'a str>),
 }
 use Operation::*;
 
@@ -58,21 +58,28 @@ fn map_labels<'a>(prog: &'a Program) -> Result<HashMap<&'a str, usize>> {
     Ok(labels)
 }
 
-fn get_label(labels: &HashMap<&str, usize>, label: &str) -> Result<usize> {
-    let linenum = labels.get(label)
-        .ok_or(Error::UnknownLabelReference(label.to_string()))?;
-    Ok(*linenum)
+fn jmp_calc(labels: &HashMap<&str, usize>, label: &Option<&str>, curr: usize) -> Result<usize> {
+
+    let jmp_off = match label {
+        Some(l) => {
+            let off = labels.get(l)
+                .ok_or(Error::UnknownLabelReference(l.to_string()))?;
+            *off - curr - 1
+        },
+        None => 0,
+    };
+    Ok(jmp_off)
 }
 
 fn to_sock_filter(linenum: usize, op: &Operation, labels: &HashMap<&str, usize>) -> Result<sock_filter> {
     let sf = match op {
         JumpTo(l) => {
-            let targetline = get_label(labels, l)? - linenum - 1;
+            let targetline = jmp_calc(labels, &Some(l), linenum)?;
             bpf_jmp(JmpOp::JA, targetline as u32, 0, 0)
         },
         Jump(op, cmp, ltrue, lfalse) => {
-            let lt = get_label(labels, ltrue)? - linenum - 1;
-            let lf = get_label(labels, lfalse)? - linenum - 1;
+            let lt = jmp_calc(labels, ltrue, linenum)?;
+            let lf = jmp_calc(labels, lfalse, linenum)?;
             bpf_jmp(*op, *cmp, lt as u8, lf as u8)
         },
         Load(mode, val) => bpf_ld(*mode, *val),
@@ -106,11 +113,10 @@ pub fn compile(prog: &Program) -> Result<Vec<sock_filter>> {
 
 #[cfg(test)]
 mod tests {
-    use test_log;
     use super::*;
+    use libc;
+    use test_log;
     use crate::{any_to_data, BpfVM};
-
-    const WORDS: u32 = 4;
 
     #[test_log::test]
     fn test_simple_jump() {
@@ -131,7 +137,7 @@ mod tests {
     fn test_ld_gt_ret() {
         let asm = vec![
             Load(Mode::IMM, 99),
-            Jump(JmpOp::JGT, 98, "ret_acc", "ret999"),
+            Jump(JmpOp::JGT, 98, Some("ret_acc"), Some("ret999")),
             // Should skip this one
             Label("ret999"),
             Load(Mode::IMM, 999),
@@ -144,6 +150,156 @@ mod tests {
         let data = vec![];
         let ret = vm.run(&data).unwrap();
         assert!(ret == 99);
+    }
+
+
+    // Complex case from Cosmopolitan pledge() impl:
+    //
+    // The family parameter of socket() must be one of:
+    //
+    //   - AF_INET  (0x02)
+    //   - AF_INET6 (0x0a)
+    //
+    // The type parameter of socket() will ignore:
+    //
+    //   - SOCK_CLOEXEC  (0x80000)
+    //   - SOCK_NONBLOCK (0x00800)
+    //
+    // The type parameter of socket() must be one of:
+    //
+    //   - SOCK_STREAM (0x01)
+    //   - SOCK_DGRAM  (0x02)
+    //
+    // The protocol parameter of socket() must be one of:
+    //
+    //   - 0
+    //   - IPPROTO_ICMP (0x01)
+    //   - IPPROTO_TCP  (0x06)
+    //   - IPPROTO_UDP  (0x11)
+    //
+    // static privileged void AllowSocketInet(struct Filter *f) {
+    //   static const struct sock_filter fragment[] = {
+    //       /* L0*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_linux_socket, 0, 15 - 1),
+    //       /* L1*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[0])),
+    //       /* L2*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x02, 1, 0),
+    //       /* L3*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x0a, 0, 14 - 4),
+    //       /* L4*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[1])),
+    //       /* L5*/ BPF_STMT(BPF_ALU | BPF_AND | BPF_K, ~0x80800),
+    //       /* L6*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x01, 1, 0),
+    //       /* L7*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x02, 0, 14 - 8),
+    //       /* L8*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[2])),
+    //       /* L9*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x00, 3, 0),
+    //       /*L10*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x01, 2, 0),
+    //       /*L11*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x06, 1, 0),
+    //       /*L12*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x11, 0, 1),
+    //       /*L13*/ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    //       /*L14*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(nr)),
+    //       /*L15*/ /* next filter */
+    //   };
+    //   AppendFilter(f, PLEDGE(fragment));
+    // }
+    #[test_log::test]
+    fn test_cosmo_socket_filter() {
+        use JmpOp::*;
+        use Mode::*;
+        use Src::*;
+        use FieldOffset::*;
+        use crate::seccomp::FieldOffset;
+
+        let asm = vec![
+            Load(ABS, Syscall.offset()),
+            // /* L0*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_linux_socket, 0, 15 - 1),
+            Jump(JEQ, libc::SYS_socket as u32, None, Some("NEXT_FILTER")),  // Not socket()
+
+            // The family parameter of socket() must be one of:
+            //
+            //   - AF_INET  (0x02)
+            //   - AF_INET6 (0x0a)
+            //
+            // /* L1*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[0])),
+            // /* L2*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x02, 1, 0),
+            // /* L3*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x0a, 0, 14 - 4),
+            Load(ABS, Arg(0).offset()),
+            Jump(JEQ, libc::AF_INET as u32, Some("Type_Check"), None),
+            Jump(JEQ, libc::AF_INET6 as u32, Some("Type_Check"), Some("NEXT_FILTER")),
+
+            // The type parameter of socket() will ignore:
+            //
+            //   - SOCK_CLOEXEC  (0x80000)
+            //   - SOCK_NONBLOCK (0x00800)
+            //
+            // The type parameter of socket() must be one of:
+            //
+            //   - SOCK_STREAM (0x01)
+            //   - SOCK_DGRAM  (0x02)
+            //
+            // /* L4*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[1])),
+            // /* L5*/ BPF_STMT(BPF_ALU | BPF_AND | BPF_K, ~0x80800),
+            // /* L6*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x01, 1, 0),
+            // /* L7*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x02, 0, 14 - 8),
+            Label("Type_Check"),
+            Load(ABS, Arg(1).offset()),
+            Alu(AluOp::AND, Const, !0x80800),
+            Jump(JEQ, libc::SOCK_STREAM as u32, Some("Proto_Check"), None),
+            Jump(JEQ, libc::SOCK_DGRAM as u32, Some("Proto_Check"), Some("NEXT_FILTER")),
+
+            // The protocol parameter of socket() must be one of:
+            //
+            //   - 0
+            //   - IPPROTO_ICMP (0x01)
+            //   - IPPROTO_TCP  (0x06)
+            //   - IPPROTO_UDP  (0x11)
+            //
+            // /* L8*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[2])),
+            // /* L9*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x00, 3, 0),
+            // /*L10*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x01, 2, 0),
+            // /*L11*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x06, 1, 0),
+            // /*L12*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x11, 0, 1),
+            // /*L13*/ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            // /*L14*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(nr)),
+            // /*L15*/ /* next filter */
+            Label("Proto_Check"),
+            Load(ABS, Arg(1).offset()),
+            Jump(JEQ, 0, Some("ALLOW"), None),
+            Jump(JEQ, libc::IPPROTO_ICMP as u32, Some("ALLOW"), None),
+            Jump(JEQ, libc::IPPROTO_TCP as u32, Some("ALLOW"), None),
+            Jump(JEQ, libc::IPPROTO_UDP as u32, Some("ALLOW"), None),
+
+            JumpTo("NEXT_FILTER"),
+
+            Label("ALLOW"),
+            Return(Const, 0),
+
+            Label("NEXT_FILTER"),
+            Return(Const, 99),
+        ];
+        let prog = compile(&asm).unwrap();
+        let mut vm = BpfVM::new(prog).unwrap();
+
+        let sc_data = libc::seccomp_data {
+            nr: libc::SYS_open as i32,
+            arch: 0,
+            instruction_pointer: 0,
+            args: [0; 6],
+        };
+        let data = any_to_data(&sc_data);
+        let ret = vm.run(&data).unwrap();
+        assert!(ret == 99);
+
+        let sc_data = libc::seccomp_data {
+            nr: libc::SYS_socket as i32,
+            arch: 0,
+            instruction_pointer: 0,
+            args: [
+                libc::AF_INET as u64,
+                libc::SOCK_STREAM as u64,
+                libc::IPPROTO_TCP as u64,
+                0, 0, 0
+            ],
+        };
+        let data = any_to_data(&sc_data);
+        let ret = vm.run(&data).unwrap();
+        assert!(ret == 0);
     }
 
 }

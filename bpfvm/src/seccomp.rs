@@ -87,6 +87,24 @@ impl TryFrom<u32> for SeccompReturn {
 
 }
 
+pub enum FieldOffset {
+    Syscall,
+    Arch,
+    InstrPointer,
+    Arg(u32),
+}
+
+impl FieldOffset {
+    pub fn offset(&self) -> u32 {
+        use FieldOffset::*;
+        match self {
+            Syscall => 0,
+            Arch => 1,
+            InstrPointer => 2,
+            Arg(arg) => (1 + 1 + 2) + arg,
+        }
+    }
+}
 
 
 pub fn run_seccomp(prog: BPFProg, syscall: libc::seccomp_data) -> Result<SeccompReturn> {
