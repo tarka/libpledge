@@ -90,8 +90,10 @@ impl TryFrom<u32> for SeccompReturn {
 pub enum FieldOffset {
     Syscall,
     Arch,
-    InstrPointer,
-    Arg(u32),
+    InstrPointerLower,
+    InstrPointerUpper,
+    ArgLower(u32),
+    ArgUpper(u32),
 }
 
 impl FieldOffset {
@@ -99,9 +101,11 @@ impl FieldOffset {
         use FieldOffset::*;
         match self {
             Syscall => 0,
-            Arch => 1,
-            InstrPointer => 2,
-            Arg(arg) => (1 + 1 + 2) + arg,
+            Arch => 4,
+            InstrPointerLower => 8,
+            InstrPointerUpper => 12,
+            ArgLower(arg) => (4 + 4 + 8) + (arg * 8),
+            ArgUpper(arg) => (4 + 4 + 8) + (arg * 8) + 4,
         }
     }
 }
@@ -110,4 +114,80 @@ impl FieldOffset {
 pub fn run_seccomp(prog: BPFProg, syscall: libc::seccomp_data) -> Result<SeccompReturn> {
     let code = BpfVM::new(prog)?.run(any_to_data(&syscall))?;
     SeccompReturn::try_from(code)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use libc;
+    use test_log;
+    use crate::{any_to_data, BpfVM};
+
+    #[test_log::test]
+    fn test_offsets() {
+        use crate::bpf::JmpOp::*;
+        use crate::bpf::Mode::*;
+        use crate::bpf::Src::*;
+        use crate::asm::Operation::*;
+        use crate::asm::compile;
+        use FieldOffset::*;
+
+        let asm = vec![
+            Load(ABS, Syscall.offset()),
+            Jump(JEQ, 0xffffffff, None, Some("FAIL")),
+            Load(ABS, Arch.offset()),
+            Jump(JEQ, 0xeeeeeeee, None, Some("FAIL")),
+            Load(ABS, InstrPointerUpper.offset()),
+            Jump(JEQ, 0xcccccccc, None, Some("FAIL")),
+            Load(ABS, InstrPointerLower.offset()),
+            Jump(JEQ, 0xdddddddd, None, Some("FAIL")),
+
+            Load(ABS, ArgLower(0).offset()),
+            Jump(JEQ, 0x11111111, None, Some("FAIL")),
+            Load(ABS, ArgUpper(0).offset()),
+            Jump(JEQ, 0, None, Some("FAIL")),
+
+            Load(ABS, ArgLower(1).offset()),
+            Jump(JEQ, 0x22222222, None, Some("FAIL")),
+            Load(ABS, ArgUpper(2).offset()),
+            Jump(JEQ, 0x33333333, None, Some("FAIL")),
+            Load(ABS, ArgLower(2).offset()),
+            Jump(JEQ, 0x44444444, None, Some("FAIL")),
+            Load(ABS, ArgLower(3).offset()),
+            Jump(JEQ, 0x55555555, None, Some("FAIL")),
+            Load(ABS, ArgUpper(4).offset()),
+            Jump(JEQ, 0x66666666, None, Some("FAIL")),
+            Load(ABS, ArgLower(4).offset()),
+            Jump(JEQ, 0x77777777, None, Some("FAIL")),
+            Load(ABS, ArgLower(5).offset()),
+            Jump(JEQ, 0x88888888, None, Some("FAIL")),
+
+            Label("ALLOW"),
+            Return(Const, 0),
+
+            Label("FAIL"),
+            Return(Const, 99),
+        ];
+        let prog = compile(&asm).unwrap();
+        let mut vm = BpfVM::new(prog).unwrap();
+
+        let sc_data = libc::seccomp_data {
+            nr: -1,
+            arch: 0xeeeeeeee,
+            instruction_pointer: 0xccccccccdddddddd,
+            args: [
+                0x11111111,
+                0x22222222,
+                0x3333333344444444,
+                0x55555555,
+                0x6666666677777777,
+                0x88888888,
+            ],
+        };
+        let data = any_to_data(&sc_data);
+        let ret = vm.run(&data).unwrap();
+        assert!(ret == 0);
+    }
+
 }
