@@ -853,7 +853,7 @@ mod tests {
 
         let ret = run_seccomp(prog, sc_data).unwrap();
 
-        assert!(ret == Return::Errno(999), "Failed, ret = 0x{:?}", ret);
+        assert!(ret == SeccompReturn::Errno(999), "Failed, ret = 0x{:?}", ret);
     }
 
     #[test_log::test]
@@ -863,7 +863,7 @@ mod tests {
 
         let ret = run_seccomp(prog, sc_data).unwrap();
 
-        assert!(ret == Return::KillProcess, "Failed, ret = 0x{:?}", ret);
+        assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
     }
 
 
@@ -874,7 +874,7 @@ mod tests {
 
         let ret = run_seccomp(prog, sc_data).unwrap();
 
-        assert!(ret == Return::Allow, "Failed, ret = 0x{:?}", ret);
+        assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
     }
 
 
@@ -886,7 +886,7 @@ mod tests {
 
         let ret = run_seccomp(prog, sc_data).unwrap();
 
-        assert!(ret == Return::KillProcess, "Failed, ret = 0x{:?}", ret);
+        assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
     }
 
 
@@ -898,7 +898,7 @@ mod tests {
 
         let ret = run_seccomp(prog, sc_data).unwrap();
 
-        assert!(ret == Return::Allow, "Failed, ret = 0x{:?}", ret);
+        assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
     }
 
 
