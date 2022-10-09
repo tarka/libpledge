@@ -71,32 +71,45 @@ fn fcntl_stdio() -> Result<WhitelistFrag> {
     Ok(compile(&asm)?)
 }
 
-// // The flags parameter of mmap() must not have:
-// //
-// //   - MAP_LOCKED   (0x02000)
-// //   - MAP_NONBLOCK (0x10000)
-// //   - MAP_HUGETLB  (0x40000)
-// //
-// fn mmap_noexec() -> Result<WhitelistFrag> {
-//     let wl = (
-//         libc::SYS_mmap,
-//         vec![Rule::new(vec![Cond::new(
-//             3,
-//             ArgLen::Dword,
-//             CmpOp::MaskedEq(0x52000),
-//             0,
-//         )?])?],
-//     );
-//     Ok(wl)
-// }
+// The flags parameter of mmap() must not have:
+//
+//   - MAP_LOCKED   (0x02000)
+//   - MAP_NONBLOCK (0x10000)
+//   - MAP_HUGETLB  (0x40000)
+//
+fn mmap_noexec() -> Result<WhitelistFrag> {
+    let mask = libc::MAP_LOCKED | libc::MAP_NONBLOCK | libc::MAP_HUGETLB;
+    let asm = syscall_check!(
+        libc::SYS_mmap,
 
-// // The prot parameter of mprotect() may only have:
-// //
-// //   - PROT_NONE  (0)
-// //   - PROT_READ  (1)
-// //   - PROT_WRITE (2)
-// //
-// fn mprotect_noexec() -> Result<WhitelistFrag> {
+        Load(ABS, ArgLower(3).offset()),
+        Alu(AND, Const, mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
+}
+
+// The prot parameter of mprotect() may only have:
+//
+//   - PROT_NONE  (0)
+//   - PROT_READ  (1)
+//   - PROT_WRITE (2)
+//
+fn mprotect_noexec() -> Result<WhitelistFrag> {
+    let mask = !(libc::PROT_READ | libc::PROT_WRITE | libc::PROT_NONE);
+    let asm = syscall_check!(
+        libc::SYS_mprotect,
+
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
+}
 //     let wl = (
 //         libc::SYS_mprotect,
 //         vec![Rule::new(vec![Cond::new(
@@ -711,8 +724,8 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     match filter {
         Whitelist(syscall) => whitelist_syscall(*syscall),
         FcntlStdio => fcntl_stdio(),
-        // MmapNoexec => mmap_noexec(),
-        // MprotectNoexec => mprotect_noexec(),
+        MmapNoexec => mmap_noexec(),
+        MprotectNoexec => mprotect_noexec(),
         // SendtoAddrless => sendto_addrless(),
         // IoctlRestrict => ioctl_restrict(),
         // KillSelf => kill_self(),
