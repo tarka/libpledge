@@ -168,11 +168,9 @@ fn stdio_exit_ok() {
 #[test]
 fn fcntl_stdio() {
     fork_expect_code(99, || {
-        pledge(vec![StdIO, CPath]).unwrap();
+        pledge(vec![StdIO, CPath, WPath]).unwrap();
         {
-            let mut fd = File::create(tmpfile()).unwrap();
-            fd.write_all(b"some dummy data").unwrap();
-
+            let fd = File::create(tmpfile()).unwrap();
             unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_DUPFD_CLOEXEC) };
         }
         unsafe { libc::exit(99) };

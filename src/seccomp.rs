@@ -19,7 +19,7 @@ use std::{env::consts::ARCH, process};
 use libc;
 use bpfvm::{
     asm::{compile, Operation::*},
-    bpf::{JmpOp::*, Mode::*, Src::*},
+    bpf::{AluOp::*, JmpOp::*, Mode::*, Src::*},
     seccomp::{AUDIT_ARCH_X86_64, FieldOffset::*, SeccompReturn},
 };
 use crate::{
@@ -29,6 +29,9 @@ use crate::{
 };
 
 pub type WhitelistFrag = Vec<libc::sock_filter>;
+
+const __O_TMPFILE: i32 = 0o20000000;
+
 
 macro_rules! syscall_check {
     ( $syscall:expr, $($el:expr), *) =>
@@ -318,36 +321,33 @@ fn fcntl_stdio() -> Result<WhitelistFrag> {
 //     Ok(wl)
 // }
 
-// // The openat() system call is permitted only when
-// //
-// //   - (flags & O_ACCMODE) == O_RDONLY
-// //
-// // The flags parameter of open() must not have:
-// //
-// //   - O_CREAT     (000000100)
-// //   - O_TRUNC     (000001000)
-// //   - __O_TMPFILE (020000000)
-// //
-// fn openat_readonly() -> Result<WhitelistFrag> {
-//     let wl = (
-//         libc::SYS_openat,
-//         vec![
-//             Rule::new(vec![Cond::new(
-//                 2,
-//                 ArgLen::Dword,
-//                 CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-//                 libc::O_RDONLY as u64,
-//             )?])?,
-//             Rule::new(vec![Cond::new(
-//                 2,
-//                 ArgLen::Dword,
-//                 CmpOp::MaskedEq(0o020001100),
-//                 0,
-//             )?])?,
-//         ],
-//     );
-//     Ok(wl)
-// }
+// The openat() system call is permitted only when
+//
+//   - (flags & O_ACCMODE) == O_RDONLY
+//
+// The flags parameter of open() must not have:
+//
+//   - O_CREAT     (000000100)
+//   - O_TRUNC     (000001000)
+//   - __O_TMPFILE (020000000)
+//
+fn openat_readonly() -> Result<WhitelistFrag> {
+    let mask = libc::O_CREAT | libc::O_TRUNC | __O_TMPFILE;
+    let asm = syscall_check!(
+        libc::SYS_openat,
+
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, libc::O_ACCMODE as u32),
+        Jump(JEQ, libc::O_RDONLY as u32, None, Some("NEXT_FILTER")),
+
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
+}
 
 
 // // The open() system call is permitted only when
@@ -399,54 +399,35 @@ fn fcntl_stdio() -> Result<WhitelistFrag> {
 // }
 
 
-// // The openat() system call is permitted only when
-// //
-// //   - (flags & O_ACCMODE) == O_WRONLY
-// //   - (flags & O_ACCMODE) == O_RDWR
-// //
-// // The open() flags parameter must not contain
-// //
-// //   - O_CREAT     (000000100)
-// //   - __O_TMPFILE (020000000)
-// //
-// fn openat_writeonly() -> Result<WhitelistFrag> {
-//     let wl = (
-//         libc::SYS_openat,
-//         vec![
-//             Rule::new(vec![
-//                 Cond::new(
-//                     2,
-//                     ArgLen::Dword,
-//                     CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-//                     libc::O_WRONLY as u64,
-//                 )?,
-//                 Cond::new(
-//                     2,
-//                     ArgLen::Dword,
-//                     CmpOp::MaskedEq(0o020000100),
-//                     0,
-//                 )?
+// The openat() system call is permitted only when
+//
+//   - (flags & O_ACCMODE) == O_WRONLY
+//   - (flags & O_ACCMODE) == O_RDWR
+//
+// The open() flags parameter must not contain
+//
+//   - O_CREAT     (000000100)
+//   - __O_TMPFILE (020000000)
+//
+fn openat_writeonly() -> Result<WhitelistFrag> {
+    let mask = libc::O_CREAT | __O_TMPFILE;
+    let asm = syscall_check!(
+        libc::SYS_openat,
 
-//             ])?,
-//             Rule::new(vec![
-//                 Cond::new(
-//                     2,
-//                     ArgLen::Dword,
-//                     CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-//                     libc::O_RDWR as u64,
-//                 )?,
-//                 Cond::new(
-//                     2,
-//                     ArgLen::Dword,
-//                     CmpOp::MaskedEq(0o020000100),
-//                     0,
-//                 )?
-//             ])?,
-//         ],
-//     );
-//     Ok(wl)
-// }
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, libc::O_ACCMODE as u32),
+        Jump(JEQ, libc::O_WRONLY as u32, Some("FLAG_CHECK"), None),
+        Jump(JEQ, libc::O_RDWR as u32, None, Some("NEXT_FILTER")),
 
+        Label("FLAG_CHECK"),
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
+}
 
 // // The mode parameter of chmod() can't have the following:
 // //
@@ -563,54 +544,38 @@ fn fcntl_stdio() -> Result<WhitelistFrag> {
 // }
 
 
-// // If the flags parameter of openat() has one of:
-// //
-// //   - O_CREAT     (000000100)
-// //   - __O_TMPFILE (020000000)
-// //
-// // Then the mode parameter must not have:
-// //
-// //   - S_ISVTX (01000 sticky)
-// //   - S_ISGID (02000 setgid)
-// //   - S_ISUID (04000 setuid)
-// //
-// fn openat_createonly() -> Result<WhitelistFrag> {
-//     let wl = (
-//         libc::SYS_openat,
-//         vec![
-//             Rule::new(vec![
-//                 Cond::new(
-//                     2,
-//                     ArgLen::Dword,
-//                     CmpOp::MaskedEq(libc::O_CREAT as u64),
-//                     libc::O_CREAT as u64,
-//                 )?,
-//                 Cond::new(
-//                     3,
-//                     ArgLen::Dword,
-//                     CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
-//                     0,
-//                 )?,
-//             ])?,
-//             Rule::new(vec![
-//                 Cond::new(
-//                     2,
-//                     ArgLen::Dword,
-//                     CmpOp::MaskedEq(0o020200000),
-//                     0o020200000,
-//                 )?,
-//                 Cond::new(
-//                     3,
-//                     ArgLen::Dword,
-//                     CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
-//                     0,
-//                 )?,
-//             ])?,
-//         ],
-//     );
-//     Ok(wl)
-// }
+// If the flags parameter of openat() has one of:
+//
+//   - O_CREAT     (000000100)
+//   - __O_TMPFILE (020000000)
+//
+// Then the mode parameter must not have:
+//
+//   - S_ISVTX (01000 sticky)
+//   - S_ISGID (02000 setgid)
+//   - S_ISUID (04000 setuid)
+//
+fn openat_createonly() -> Result<WhitelistFrag> {
+    let mmask = libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID;
+    let asm = syscall_check!(
+        libc::SYS_openat,
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, libc::O_CREAT as u32),
+        Jump(JEQ, libc::O_CREAT as u32, Some("FLAG_CHECK"), None),
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, __O_TMPFILE as u32),
+        Jump(JEQ, __O_TMPFILE as u32, Some("FLAG_CHECK"), Some("ALLOW")),
 
+        Label("FLAG_CHECK"),
+        Load(ABS, ArgLower(3).offset()),
+        Alu(AND, Const, mmask as u32),
+        Jump(JEQ, 0, Some("ALLOW"), Some("NEXT_FILTER")),
+
+        Label("ALLOW"),
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
+}
 
 // // Then the mode parameter must not have:
 // //
@@ -756,14 +721,14 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
         // CloneThread => clone_thread(),
         // Prlimit64Stdio => prlimit64_stdio(),
         // OpenReadonly => open_readonly(),
-        // OpenatReadonly => openat_readonly(),
+        OpenatReadonly => openat_readonly(),
         // OpenWriteonly => open_writeonly(),
-        // OpenatWriteonly => openat_writeonly(),
+        OpenatWriteonly => openat_writeonly(),
         // ChmodNobits => chmod_nobits(),
         // FchmodNobits => fchmod_nobits(),
         // FchmodatNobits => fchmodat_nobits(),
         // OpenCreateonly => open_createonly(),
-        // OpenatCreateonly => openat_createonly(),
+        OpenatCreateonly => openat_createonly(),
         // CreatRestrict => create_restrict(),
         // FcntlLock => fcntl_lock(),
         // SocketInet => socket_inet(),
@@ -893,6 +858,16 @@ mod tests {
         assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
     }
 
+
+    #[test_log::test]
+    fn rust_file_open() {
+        // openat(AT_FDCWD, "file.txt", O_WRONLY|O_CREAT|O_CLOEXEC, 0666) = 257
+        let prog = promises_to_prog(vec![StdIO, CPath], ViolationAction::KillProcess).unwrap();
+
+        let sc_data = syscall(libc::SYS_openat, [0, 0, (libc::O_WRONLY | libc::O_CREAT | libc::O_CLOEXEC) as u64, 0o666, 0, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
+    }
 
     #[test_log::test]
     fn fcntl_stdio() {
