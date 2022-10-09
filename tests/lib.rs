@@ -15,9 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-mod seccomp;
 mod util;
-
 use util::{fork_expect_code, fork_expect_sig, tmpfile};
 
 use std::{
@@ -85,141 +83,141 @@ fn stdio_exit_ok() {
     });
 }
 
-#[test]
-fn stdio_open_not_passwd() {
-    fork_expect_sig(Signal::SIGSYS, || {
-        pledge(vec![StdIO]).unwrap();
-        let _fd = File::open("/etc/passwd");
-        unsafe { libc::exit(99) };
-    });
-}
+// #[test]
+// fn stdio_open_not_passwd() {
+//     fork_expect_sig(Signal::SIGSYS, || {
+//         pledge(vec![StdIO]).unwrap();
+//         let _fd = File::open("/etc/passwd");
+//         unsafe { libc::exit(99) };
+//     });
+// }
 
-#[test]
-fn rpath_open_passwd() {
-    fork_expect_code(99, || {
-        pledge(vec![StdIO, RPath]).unwrap();
-        let fd = File::open("/etc/passwd").unwrap();
-        let lines = BufReader::new(fd).lines();
-        assert!(lines.count() > 0);
-        unsafe { libc::exit(99) };
-    });
-}
+// #[test]
+// fn rpath_open_passwd() {
+//     fork_expect_code(99, || {
+//         pledge(vec![StdIO, RPath]).unwrap();
+//         let fd = File::open("/etc/passwd").unwrap();
+//         let lines = BufReader::new(fd).lines();
+//         assert!(lines.count() > 0);
+//         unsafe { libc::exit(99) };
+//     });
+// }
 
-#[test]
-fn rpath_no_create() {
-    fork_expect_sig(Signal::SIGSYS, || {
-        pledge(vec![StdIO, RPath]).unwrap();
-        let _fd = File::create(tmpfile());
-        unsafe { libc::exit(99) };
-    });
-}
+// #[test]
+// fn rpath_no_create() {
+//     fork_expect_sig(Signal::SIGSYS, || {
+//         pledge(vec![StdIO, RPath]).unwrap();
+//         let _fd = File::create(tmpfile());
+//         unsafe { libc::exit(99) };
+//     });
+// }
 
-#[test]
-fn wpath_no_create() {
-    fork_expect_sig(Signal::SIGSYS, || {
-        pledge(vec![StdIO, WPath]).unwrap();
-        let _fd = File::create(tmpfile());
-        unsafe { libc::exit(99) };
-    });
-}
+// #[test]
+// fn wpath_no_create() {
+//     fork_expect_sig(Signal::SIGSYS, || {
+//         pledge(vec![StdIO, WPath]).unwrap();
+//         let _fd = File::create(tmpfile());
+//         unsafe { libc::exit(99) };
+//     });
+// }
 
-#[test]
-fn cpath_can_create() {
-    fork_expect_code(99, || {
-        pledge(vec![StdIO, CPath]).unwrap();
-        let _fd = File::create(tmpfile()).unwrap();
-        unsafe { libc::exit(99) };
-    });
-}
+// #[test]
+// fn cpath_can_create() {
+//     fork_expect_code(99, || {
+//         pledge(vec![StdIO, CPath]).unwrap();
+//         let _fd = File::create(tmpfile()).unwrap();
+//         unsafe { libc::exit(99) };
+//     });
+// }
 
-#[test]
-fn create_and_write() {
-    fork_expect_code(99, || {
-        pledge(vec![StdIO, CPath, WPath]).unwrap();
-        {
-            let mut fd = File::create(tmpfile()).unwrap();
-            fd.write_all(b"some dummy data").unwrap();
-        }
-        unsafe { libc::exit(99) };
-    });
-}
+// #[test]
+// fn create_and_write() {
+//     fork_expect_code(99, || {
+//         pledge(vec![StdIO, CPath, WPath]).unwrap();
+//         {
+//             let mut fd = File::create(tmpfile()).unwrap();
+//             fd.write_all(b"some dummy data").unwrap();
+//         }
+//         unsafe { libc::exit(99) };
+//     });
+// }
 
-#[test]
-fn no_dpath_mknod() {
-    fork_expect_sig(Signal::SIGSYS, || {
-        pledge(vec![StdIO]).unwrap();
-        let tmp = CString::new(tmpfile().to_str().unwrap()).unwrap();
-        unsafe { libc::mknod(tmp.as_ptr(), libc::S_IRUSR, 0) };
+// #[test]
+// fn no_dpath_mknod() {
+//     fork_expect_sig(Signal::SIGSYS, || {
+//         pledge(vec![StdIO]).unwrap();
+//         let tmp = CString::new(tmpfile().to_str().unwrap()).unwrap();
+//         unsafe { libc::mknod(tmp.as_ptr(), libc::S_IRUSR, 0) };
 
-        unsafe { libc::exit(99) };
-    });
-}
+//         unsafe { libc::exit(99) };
+//     });
+// }
 
-#[test]
-fn dpath_mknod_ok() {
-    fork_expect_code(99, || {
-        pledge(vec![StdIO, DPath]).unwrap();
-        let tmp = CString::new(tmpfile().to_str().unwrap()).unwrap();
-        unsafe { libc::mknod(tmp.as_ptr(), libc::S_IRUSR, 0) };
+// #[test]
+// fn dpath_mknod_ok() {
+//     fork_expect_code(99, || {
+//         pledge(vec![StdIO, DPath]).unwrap();
+//         let tmp = CString::new(tmpfile().to_str().unwrap()).unwrap();
+//         unsafe { libc::mknod(tmp.as_ptr(), libc::S_IRUSR, 0) };
 
-        unsafe { libc::exit(99) };
-    });
-}
-
-
-#[test]
-fn no_fcntl() {
-    fork_expect_sig(Signal::SIGSYS, || {
-        pledge(vec![StdIO, CPath]).unwrap();
-        {
-            let mut fd = File::create(tmpfile()).unwrap();
-            fd.write_all(b"some dummy data").unwrap();
-
-            unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETLK) };
-        }
-        unsafe { libc::exit(99) };
-    });
-}
+//         unsafe { libc::exit(99) };
+//     });
+// }
 
 
-#[test]
-fn fcntl_ok() {
-    fork_expect_code(99, || {
-        pledge(vec![StdIO, CPath, FLock]).unwrap();
-        {
-            let mut fd = File::create(tmpfile()).unwrap();
-            fd.write_all(b"some dummy data").unwrap();
+// #[test]
+// fn no_fcntl() {
+//     fork_expect_sig(Signal::SIGSYS, || {
+//         pledge(vec![StdIO, CPath]).unwrap();
+//         {
+//             let mut fd = File::create(tmpfile()).unwrap();
+//             fd.write_all(b"some dummy data").unwrap();
 
-            unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETLK) };
-        }
-        unsafe { libc::exit(99) };
-    });
-}
-
-
-#[test]
-fn no_fattr() {
-    fork_expect_sig(Signal::SIGSYS, || {
-        pledge(vec![StdIO, CPath]).unwrap();
-        {
-            let mut fd = File::create(tmpfile()).unwrap();
-            fd.write_all(b"some dummy data").unwrap();
-            unsafe { libc::fchmod(fd.as_raw_fd(), libc::S_ISUID) };
-        }
-        unsafe { libc::exit(99) };
-    });
-}
+//             unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETLK) };
+//         }
+//         unsafe { libc::exit(99) };
+//     });
+// }
 
 
-#[test]
-fn fattr_ok() {
-    fork_expect_code(99, || {
-        pledge(vec![StdIO, CPath, FAttr]).unwrap();
-        {
-            let mut fd = File::create(tmpfile()).unwrap();
-            fd.write_all(b"some dummy data").unwrap();
-            unsafe { libc::fchmod(fd.as_raw_fd(), libc::S_ISUID) };
-        }
-        unsafe { libc::exit(99) };
-    });
-}
+// #[test]
+// fn fcntl_ok() {
+//     fork_expect_code(99, || {
+//         pledge(vec![StdIO, CPath, FLock]).unwrap();
+//         {
+//             let mut fd = File::create(tmpfile()).unwrap();
+//             fd.write_all(b"some dummy data").unwrap();
+
+//             unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETLK) };
+//         }
+//         unsafe { libc::exit(99) };
+//     });
+// }
+
+
+// #[test]
+// fn no_fattr() {
+//     fork_expect_sig(Signal::SIGSYS, || {
+//         pledge(vec![StdIO, CPath]).unwrap();
+//         {
+//             let mut fd = File::create(tmpfile()).unwrap();
+//             fd.write_all(b"some dummy data").unwrap();
+//             unsafe { libc::fchmod(fd.as_raw_fd(), libc::S_ISUID) };
+//         }
+//         unsafe { libc::exit(99) };
+//     });
+// }
+
+
+// #[test]
+// fn fattr_ok() {
+//     fork_expect_code(99, || {
+//         pledge(vec![StdIO, CPath, FAttr]).unwrap();
+//         {
+//             let mut fd = File::create(tmpfile()).unwrap();
+//             fd.write_all(b"some dummy data").unwrap();
+//             unsafe { libc::fchmod(fd.as_raw_fd(), libc::S_ISUID) };
+//         }
+//         unsafe { libc::exit(99) };
+//     });
+// }
