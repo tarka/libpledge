@@ -110,34 +110,24 @@ fn mprotect_noexec() -> Result<WhitelistFrag> {
     );
     Ok(compile(&asm)?)
 }
-//     let wl = (
-//         libc::SYS_mprotect,
-//         vec![Rule::new(vec![Cond::new(
-//             2,
-//             ArgLen::Dword,
-//             CmpOp::Le,
-//             2, // Arg == 0-2
-//         )?])?],
-//     );
-//     Ok(wl)
-// }
 
-// // The sockaddr parameter of sendto() must be
-// //
-// //   - NULL
-// //
-// fn sendto_addrless() -> Result<WhitelistFrag> {
-//     let wl = (
-//         libc::SYS_sendto,
-//         vec![Rule::new(vec![Cond::new(
-//             4,
-//             ArgLen::Qword,
-//             CmpOp::Eq,
-//             0, // Null sockaddr pointer
-//         )?])?],
-//     );
-//     Ok(wl)
-// }
+// The sockaddr parameter of sendto() must be
+//
+//   - NULL
+//
+fn sendto_addrless() -> Result<WhitelistFrag> {
+    let asm = syscall_check!(
+        libc::SYS_sendto,
+
+        Load(ABS, ArgLower(4).offset()),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+        Load(ABS, ArgUpper(4).offset()),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
+}
 
 // // The second argument of ioctl() must be one of:
 // //
@@ -726,7 +716,7 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
         FcntlStdio => fcntl_stdio(),
         MmapNoexec => mmap_noexec(),
         MprotectNoexec => mprotect_noexec(),
-        // SendtoAddrless => sendto_addrless(),
+        SendtoAddrless => sendto_addrless(),
         // IoctlRestrict => ioctl_restrict(),
         // KillSelf => kill_self(),
         // TkillSelf => tkill_self(),
@@ -909,6 +899,26 @@ mod tests {
         let ret = run_seccomp(&prog, sc_data).unwrap();
 
         assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
+    }
+
+    #[test_log::test]
+    fn sendto_addr() {
+        let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
+
+        let sc_data = syscall(libc::SYS_sendto, [0, 0, 0, 0, !0, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
+
+        let sc_data = syscall(libc::SYS_sendto, [0, 0, 0, 0, 0xffffffff00000000, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
+        let sc_data = syscall(libc::SYS_sendto, [0, 0, 0, 0, 0x00000000ffffffff, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
+
+        let sc_data = syscall(libc::SYS_sendto, [0, 0, 0, 0, 0, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
     }
 
 
