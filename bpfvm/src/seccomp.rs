@@ -126,7 +126,7 @@ impl FieldOffset {
 }
 
 
-pub fn run_seccomp(prog: BPFProg, syscall: libc::seccomp_data) -> Result<SeccompReturn> {
+pub fn run_seccomp(prog: &BPFProg, syscall: libc::seccomp_data) -> Result<SeccompReturn> {
     let code = BpfVM::new(prog)?.run(any_to_data(&syscall))?;
     SeccompReturn::try_from(code)
 }

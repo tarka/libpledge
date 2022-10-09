@@ -63,7 +63,7 @@ pub fn any_to_data<T: Sized>(p: &T) -> RunData {
 }
 
 impl BpfVM {
-    pub fn new(prog: BPFProg) -> Result<BpfVM> {
+    pub fn new(prog: &BPFProg) -> Result<BpfVM> {
         if prog.len() > u16::MAX as usize {
             return Err(Error::ProgramTooLong(prog.len()));
         }
