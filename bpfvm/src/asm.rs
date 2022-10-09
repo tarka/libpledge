@@ -36,8 +36,7 @@ pub enum Operation<'a> {
 }
 use Operation::*;
 
-type Program<'a> = Vec<Operation<'a>>;
-
+type Program<'a> = [Operation<'a>];
 
 
 fn map_labels<'a>(prog: &'a Program) -> Result<HashMap<&'a str, usize>> {

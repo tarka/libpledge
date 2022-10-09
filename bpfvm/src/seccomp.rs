@@ -66,6 +66,21 @@ pub enum SeccompReturn {
     Allow,
 }
 
+impl From<SeccompReturn> for u32 {
+    fn from(ret: SeccompReturn) -> u32 {
+        use SeccompReturn::*;
+        match ret {
+            KillProcess => SECCOMP_RET_KILL_PROCESS,
+            KillThread => SECCOMP_RET_KILL_THREAD,
+            Trap => SECCOMP_RET_TRAP,
+            Errno(e) => SECCOMP_RET_ERRNO | e,
+            Trace(t) => SECCOMP_RET_TRACE | t,
+            Log => SECCOMP_RET_LOG,
+            Allow => SECCOMP_RET_ALLOW,
+        }
+    }
+}
+
 impl TryFrom<u32> for SeccompReturn {
     type Error = Error;
     fn try_from(ret: u32) -> Result<Self> {
