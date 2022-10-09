@@ -30,65 +30,43 @@ use crate::{
 
 pub type WhitelistFrag = Vec<libc::sock_filter>;
 
-
 macro_rules! syscall_check {
-    ( $syscall:ident $( $el:expr ), *) =>
+    ( $syscall:expr, $($el:expr), *) =>
         ([
-            bpfvm::asm::Operation::Load(
-                bpfvm::bpf::Mode::ABS,
-                bpfvm::seccomp::FieldOffset::Syscall.offset()
-            ),
-            bpfvm::asm::Operation::Jump(
-                bpfvm::bpf::JmpOp::JEQ,
-                $syscall as u32,
-                None,
-                Some("NEXT_FILTER")
-            ),
-            $(
-                $el,
-            )*
-            bpfvm::asm::Operation::Return(
-                bpfvm::bpf::Src::Const,
-                bpfvm::seccomp::SeccompReturn::Allow.into()
-            ),
-            bpfvm::asm::Operation::Label("NEXT_FILTER"),
+            Load(ABS, Syscall.offset()),
+            Jump(JEQ, $syscall as u32, None, Some("NEXT_FILTER")),
+            $($el,)*
+            Return(Const, SeccompReturn::Allow.into()),
+            Label("NEXT_FILTER"),
         ])
 }
 
 fn whitelist_syscall(syscall: libc::c_long) -> Result<WhitelistFrag> {
-    let asm = syscall_check!(syscall);
+    // FIXME: Hack to simplify the macro. There's probably a better way.
+    let asm = syscall_check!(syscall,);
     Ok(compile(&asm)?)
 }
 
-// // The second argument of fcntl() must be one of:
-// //
-// //   - F_DUPFD (0)
-// //   - F_GETFD (1)
-// //   - F_SETFD (2)
-// //   - F_GETFL (3)
-// //   - F_SETFL (4)
-// //   - F_DUPFD_CLOEXEC (1030)
-// //
-// fn fcntl_stdio() -> Result<WhitelistFrag> {
-//     let wl = (
-//         libc::SYS_fcntl,
-//         vec![
-//             Rule::new(vec![Cond::new(
-//                 1,
-//                 ArgLen::Dword,
-//                 CmpOp::Le,
-//                 4, // Arg == 0-4
-//             )?])?,
-//             Rule::new(vec![Cond::new(
-//                 1,
-//                 ArgLen::Dword,
-//                 CmpOp::Eq,
-//                 libc::F_DUPFD_CLOEXEC as u64,
-//             )?])?,
-//         ],
-//     );
-//     Ok(wl)
-// }
+// The second argument of fcntl() must be one of:
+//
+//   - F_DUPFD (0)
+//   - F_GETFD (1)
+//   - F_SETFD (2)
+//   - F_GETFL (3)
+//   - F_SETFL (4)
+//   - F_DUPFD_CLOEXEC (1030)
+//
+fn fcntl_stdio() -> Result<WhitelistFrag> {
+    let asm = syscall_check!(
+        libc::SYS_fcntl,
+        Load(ABS, ArgLower(1).offset()),
+        Jump(JEQ, libc::F_DUPFD_CLOEXEC as u32, Some("Allow"), None),
+        Jump(JGT, 4, Some("NEXT_FILTER"), None),
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
+}
 
 // // The flags parameter of mmap() must not have:
 // //
@@ -767,7 +745,7 @@ fn bpf_footer(violation: ViolationAction) -> Result<WhitelistFrag> {
 fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     match filter {
         Whitelist(syscall) => whitelist_syscall(*syscall),
-        // FcntlStdio => fcntl_stdio(),
+        FcntlStdio => fcntl_stdio(),
         // MmapNoexec => mmap_noexec(),
         // MprotectNoexec => mprotect_noexec(),
         // SendtoAddrless => sendto_addrless(),
@@ -889,7 +867,7 @@ mod tests {
         let prog = promises_to_prog(vec![StdIO], ViolationAction::Errno(999)).unwrap();
         let sc_data = syscall(libc::SYS_personality, [0;6]);
 
-        let ret = run_seccomp(prog, sc_data).unwrap();
+        let ret = run_seccomp(&prog, sc_data).unwrap();
 
         assert!(ret == SeccompReturn::Errno(999), "Failed, ret = 0x{:?}", ret);
     }
@@ -899,7 +877,7 @@ mod tests {
         let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
         let sc_data = syscall(libc::SYS_personality, [0;6]);
 
-        let ret = run_seccomp(prog, sc_data).unwrap();
+        let ret = run_seccomp(&prog, sc_data).unwrap();
 
         assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
     }
@@ -910,29 +888,47 @@ mod tests {
         let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
         let sc_data = syscall(libc::SYS_gettimeofday, [0;6]);
 
-        let ret = run_seccomp(prog, sc_data).unwrap();
+        let ret = run_seccomp(&prog, sc_data).unwrap();
 
         assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
     }
 
 
+    #[test_log::test]
+    fn fcntl_stdio() {
+        let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
+
+        let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_DUPFD_CLOEXEC as u64, 0, 0, 0, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
+
+        let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_SETFD as u64, 0, 0, 0, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
+
+        let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_NOTIFY as u64, 0, 0, 0, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
+    }
+
+
+    #[test_log::test]
+    fn no_fcntl_lock() {
+        let prog = promises_to_prog(vec![StdIO, CPath],
+                                    ViolationAction::KillProcess).unwrap();
+        let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_GETLK as u64, 0, 0, 0, 0]);
+
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+
+        assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
+    }
+
+
     // #[test_log::test]
-    // fn no_fcntl() {
-    //     let prog = promises_to_prog(vec![StdIO, CPath],
-    //                                 ViolationAction::KillProcess).unwrap();
-    //     let sc_data = syscall(libc::SYS_fcntl, [69, libc::F_GETLK as u64, 0, 0, 0, 0]);
-
-    //     let ret = run_seccomp(prog, sc_data).unwrap();
-
-    //     assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
-    // }
-
-
-    // #[test_log::test]
-    // fn fcntl_ok() {
+    // fn fcntl_lock_ok() {
     //     let prog = promises_to_prog(vec![StdIO, CPath, FLock],
     //                                 ViolationAction::KillProcess).unwrap();
-    //     let sc_data = syscall(libc::SYS_fcntl, [69, libc::F_GETLK as u64, 0, 0, 0, 0]);
+    //     let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_GETLK as u64, 0, 0, 0, 0]);
 
     //     let ret = run_seccomp(prog, sc_data).unwrap();
 

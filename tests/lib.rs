@@ -165,23 +165,38 @@ fn stdio_exit_ok() {
 // }
 
 
+#[test]
+fn fcntl_stdio() {
+    fork_expect_code(99, || {
+        pledge(vec![StdIO, CPath]).unwrap();
+        {
+            let mut fd = File::create(tmpfile()).unwrap();
+            fd.write_all(b"some dummy data").unwrap();
+
+            unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_DUPFD_CLOEXEC) };
+        }
+        unsafe { libc::exit(99) };
+    });
+}
+
+
+#[test]
+fn no_fcntl_lock() {
+    fork_expect_sig(Signal::SIGSYS, || {
+        pledge(vec![StdIO, CPath]).unwrap();
+        {
+            let mut fd = File::create(tmpfile()).unwrap();
+            fd.write_all(b"some dummy data").unwrap();
+
+            unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETLK) };
+        }
+        unsafe { libc::exit(99) };
+    });
+}
+
+
 // #[test]
-// fn no_fcntl() {
-//     fork_expect_sig(Signal::SIGSYS, || {
-//         pledge(vec![StdIO, CPath]).unwrap();
-//         {
-//             let mut fd = File::create(tmpfile()).unwrap();
-//             fd.write_all(b"some dummy data").unwrap();
-
-//             unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETLK) };
-//         }
-//         unsafe { libc::exit(99) };
-//     });
-// }
-
-
-// #[test]
-// fn fcntl_ok() {
+// fn fcntl_lock_ok() {
 //     fork_expect_code(99, || {
 //         pledge(vec![StdIO, CPath, FLock]).unwrap();
 //         {

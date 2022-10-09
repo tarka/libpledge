@@ -36,7 +36,7 @@ use Promise::*;
 #[derive(Eq, PartialEq, Debug)]
 pub(crate) enum Filtered {
     Whitelist(libc::c_long),
-    // FcntlStdio,
+    FcntlStdio,
     // MmapNoexec,
     // MprotectNoexec,
     // SendtoAddrless,
@@ -99,7 +99,7 @@ lazy_static! {
                 Whitelist(libc::SYS_dup2),
                 Whitelist(libc::SYS_dup3),
                 Whitelist(libc::SYS_fchdir),
-//                FcntlStdio,
+                FcntlStdio,
                 Whitelist(libc::SYS_fstat),
                 Whitelist(libc::SYS_fsync),
                 Whitelist(libc::SYS_sysinfo),
