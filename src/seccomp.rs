@@ -18,10 +18,9 @@
 use std::{env::consts::ARCH, process};
 use libc;
 use bpfvm::{
-    BPFProg,
     asm::{compile, Operation::*},
     bpf::{JmpOp::*, Mode::*, Src::*},
-    seccomp::{FieldOffset::*, SeccompReturn},
+    seccomp::{AUDIT_ARCH_X86_64, FieldOffset::*, SeccompReturn},
 };
 use crate::{
     errors::{Error, Result},
@@ -48,10 +47,10 @@ macro_rules! syscall_check {
             $(
                 $el,
             )*
-                bpfvm::asm::Operation::Return(
-                    bpfvm::bpf::Src::Const,
-                    bpfvm::seccomp::SeccompReturn::Allow.into()
-                ),
+            bpfvm::asm::Operation::Return(
+                bpfvm::bpf::Src::Const,
+                bpfvm::seccomp::SeccompReturn::Allow.into()
+            ),
             bpfvm::asm::Operation::Label("NEXT_FILTER"),
         ])
 }
@@ -747,9 +746,15 @@ fn whitelist_syscall(syscall: libc::c_long) -> Result<WhitelistFrag> {
 // }
 
 fn bpf_header() -> Result<WhitelistFrag> {
-    // FIXME: Arch check
     // FIXME: Move default promises here?
-    Ok(vec!())
+    let asm = [
+        Load(ABS, Arch.offset()),
+        Jump(JEQ, AUDIT_ARCH_X86_64, Some("START"), None),
+        Return(Const, SeccompReturn::KillProcess.into()),
+        Label("START"),
+    ];
+
+    Ok(compile(&asm)?)
 }
 
 fn bpf_footer(violation: ViolationAction) -> Result<WhitelistFrag> {
@@ -798,10 +803,9 @@ pub fn pledge(promises: Vec<Promise>) -> Result<()> {
 
 
 fn promises_to_prog(promises: Vec<Promise>, violation: ViolationAction) -> Result<WhitelistFrag> {
-    // Convert all promises into filter specs.
+    // Convert all promises into filter specs (lists of allowed
+    // syscalls & params).
     let defaults = vec![Promise::Default];
-    let footer = bpf_footer(violation)?;
-
     let filters = defaults
         .into_iter()
         .chain(promises.into_iter())
@@ -811,17 +815,23 @@ fn promises_to_prog(promises: Vec<Promise>, violation: ViolationAction) -> Resul
         .flatten()
         .collect::<Vec<&Filtered>>();
 
-    // Filters to seccomp BPF
+    // Convert filters to seccomp BPF
     let whitelist = filters
         .into_iter()
         .map(oath_to_bpf)
-        .collect::<Result<Vec<WhitelistFrag>>>()?
+        .collect::<Result<Vec<WhitelistFrag>>>()?;
+
+    // Assemble parts
+    let header = [bpf_header()?];
+    let footer = [bpf_footer(violation)?];
+    let prog = header
         .into_iter()
-        .chain([footer].into_iter())
+        .chain(whitelist)
+        .chain(footer.into_iter())
         .flatten()
         .collect::<WhitelistFrag>();
 
-    Ok(whitelist)
+    Ok(prog)
 }
 
 pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> {
