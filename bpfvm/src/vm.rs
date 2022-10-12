@@ -303,7 +303,7 @@ mod tests {
     #[test_log::test]
     fn test_ret() {
         let prog = vec![bpf_stmt(libc::BPF_RET | libc::BPF_K, 99)];
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
         let data = vec![];
         let ret = vm.run(&data).unwrap();
         assert!(ret == 99);
@@ -315,7 +315,7 @@ mod tests {
             bpf_stmt(libc::BPF_LD | libc::BPF_K, 99),
             bpf_stmt(libc::BPF_RET | BPF_A, 0),
         ];
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
         let data = vec![];
         let ret = vm.run(&data).unwrap();
         assert!(ret == 99);
@@ -327,7 +327,7 @@ mod tests {
             bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 1*WORDS),
             bpf_stmt(libc::BPF_RET | BPF_A, 0),
         ];
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
         let data = vec![0, 0xFFFFFFFF];
         let ret = vm.run(&data).unwrap();
         assert!(ret == 0xFFFFFFFF);
@@ -340,7 +340,7 @@ mod tests {
             bpf_stmt(libc::BPF_ALU | libc::BPF_AND | libc::BPF_K, 0xF0),
             bpf_stmt(libc::BPF_RET | BPF_A, 0),
         ];
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
 
         let data = vec![0, 0, 0xFF, 0];
         let ret = vm.run(&data).unwrap();
@@ -358,7 +358,7 @@ mod tests {
             bpf_stmt(libc::BPF_ALU | libc::BPF_MUL | libc::BPF_K, 2),
             bpf_stmt(libc::BPF_RET | BPF_A, 0),
         ];
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
 
         let data = vec![0, 0, 8, 0];
         let ret = vm.run(&data).unwrap();
@@ -374,7 +374,7 @@ mod tests {
             bpf_stmt(libc::BPF_LD | libc::BPF_K, 999),
             bpf_stmt(libc::BPF_RET | BPF_A, 0),
         ];
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
         let data = vec![];
         let ret = vm.run(&data).unwrap();
         assert!(ret == 99);
@@ -389,7 +389,7 @@ mod tests {
             bpf_stmt(libc::BPF_LD | libc::BPF_K, 999),
             bpf_stmt(libc::BPF_RET | BPF_A, 0),
         ];
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
         let data = vec![];
         let ret = vm.run(&data).unwrap();
         assert!(ret == 99);
@@ -462,7 +462,7 @@ mod tests {
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 114),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 0),
         ];
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
 
         let ret = vm.run(&data).unwrap();
         assert!(ret == 0, "Failed, ret = 0x{:x}", ret);

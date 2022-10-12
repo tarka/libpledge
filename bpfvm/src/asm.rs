@@ -126,7 +126,7 @@ mod tests {
         ];
         let prog = compile(&asm).unwrap();
 
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
         let data = vec![];
         let ret = vm.run(&data).unwrap();
         assert!(ret == 99);
@@ -145,7 +145,7 @@ mod tests {
         ];
         let prog = compile(&asm).unwrap();
 
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
         let data = vec![];
         let ret = vm.run(&data).unwrap();
         assert!(ret == 99);
@@ -257,7 +257,7 @@ mod tests {
             Return(Const, 99),
         ];
         let prog = compile(&asm).unwrap();
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
 
         let sc_data = libc::seccomp_data {
             nr: libc::SYS_open as i32,

@@ -127,7 +127,7 @@ impl FieldOffset {
 
 
 pub fn run_seccomp(prog: &BPFProg, syscall: libc::seccomp_data) -> Result<SeccompReturn> {
-    let code = BpfVM::new(prog)?.run(any_to_data(&syscall))?;
+    let code = BpfVM::new(&prog)?.run(any_to_data(&syscall))?;
     SeccompReturn::try_from(code)
 }
 
@@ -185,7 +185,7 @@ mod tests {
             Return(Const, 99),
         ];
         let prog = compile(&asm).unwrap();
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
 
         let sc_data = libc::seccomp_data {
             nr: -1,
