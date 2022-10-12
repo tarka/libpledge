@@ -15,9 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-mod seccomp;
 mod util;
-
 use util::{fork_expect_code, fork_expect_sig, tmpfile};
 
 use std::{
@@ -168,7 +166,20 @@ fn dpath_mknod_ok() {
 
 
 #[test]
-fn no_fcntl() {
+fn fcntl_stdio() {
+    fork_expect_code(99, || {
+        pledge(vec![StdIO, CPath, WPath]).unwrap();
+        {
+            let fd = File::create(tmpfile()).unwrap();
+            unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_DUPFD_CLOEXEC) };
+        }
+        unsafe { libc::exit(99) };
+    });
+}
+
+
+#[test]
+fn no_fcntl_lock() {
     fork_expect_sig(Signal::SIGSYS, || {
         pledge(vec![StdIO, CPath]).unwrap();
         {
@@ -183,7 +194,7 @@ fn no_fcntl() {
 
 
 #[test]
-fn fcntl_ok() {
+fn fcntl_lock_ok() {
     fork_expect_code(99, || {
         pledge(vec![StdIO, CPath, FLock]).unwrap();
         {
@@ -204,7 +215,7 @@ fn no_fattr() {
         {
             let mut fd = File::create(tmpfile()).unwrap();
             fd.write_all(b"some dummy data").unwrap();
-            unsafe { libc::fchmod(fd.as_raw_fd(), libc::S_ISUID) };
+            unsafe { libc::fchmod(fd.as_raw_fd(), 0o666) };
         }
         unsafe { libc::exit(99) };
     });
@@ -218,7 +229,20 @@ fn fattr_ok() {
         {
             let mut fd = File::create(tmpfile()).unwrap();
             fd.write_all(b"some dummy data").unwrap();
-            unsafe { libc::fchmod(fd.as_raw_fd(), libc::S_ISUID) };
+            unsafe { libc::fchmod(fd.as_raw_fd(), 0o666) };
+        }
+        unsafe { libc::exit(99) };
+    });
+}
+
+#[test]
+fn fattr_no_setuid() {
+    fork_expect_sig(Signal::SIGSYS, || {
+        pledge(vec![StdIO, CPath, FAttr]).unwrap();
+        {
+            let mut fd = File::create(tmpfile()).unwrap();
+            fd.write_all(b"some dummy data").unwrap();
+            unsafe { libc::fchmod(fd.as_raw_fd(), libc::S_ISUID | 0o666) };
         }
         unsafe { libc::exit(99) };
     });

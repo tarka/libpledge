@@ -16,7 +16,6 @@
  */
 
 use lazy_static::lazy_static;
-use libc;
 use std::collections::HashMap;
 
 #[derive(Hash, Eq, PartialEq, Debug)]

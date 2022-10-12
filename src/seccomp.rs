@@ -15,24 +15,38 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+use std::process;
+use bpfvm::{
+    asm::{compile, Operation::*},
+    bpf::{AluOp::*, JmpOp::*, Mode::*, Src::*},
+    seccomp::{AUDIT_ARCH_X86_64, FieldOffset::*, SeccompReturn},
+};
 use crate::{
     errors::{Error, Result},
     promises::{Filtered::{self, *}, Promise, PROMISES},
     ViolationAction,
 };
-use libc;
-use seccompiler::{
-    apply_filter, BpfProgram, SeccompAction as Action, SeccompCmpArgLen as ArgLen,
-    SeccompCmpOp as CmpOp, SeccompCondition as Cond, SeccompFilter, SeccompRule as Rule,
-};
-use std::{env::consts::ARCH, process, collections::BTreeMap};
 
-pub type WhitelistFrag = (libc::c_long, Vec<Rule>);
+pub type WhitelistFrag = Vec<libc::sock_filter>;
+
+const __O_TMPFILE: i32 = 0o20000000;
+
+
+macro_rules! syscall_check {
+    ( $syscall:expr, $($el:expr), *) =>
+        ([
+            Load(ABS, Syscall.offset()),
+            Jump(JEQ, $syscall as u32, None, Some("NEXT_FILTER")),
+            $($el,)*
+            Return(Const, SeccompReturn::Allow.into()),
+            Label("NEXT_FILTER"),
+        ])
+}
 
 fn whitelist_syscall(syscall: libc::c_long) -> Result<WhitelistFrag> {
-    let wl = (syscall, vec![]);
-
-    Ok(wl)
+    // FIXME: Hack to simplify the macro. There's probably a better way.
+    let asm = syscall_check!(syscall,);
+    Ok(compile(&asm)?)
 }
 
 // The second argument of fcntl() must be one of:
@@ -45,24 +59,15 @@ fn whitelist_syscall(syscall: libc::c_long) -> Result<WhitelistFrag> {
 //   - F_DUPFD_CLOEXEC (1030)
 //
 fn fcntl_stdio() -> Result<WhitelistFrag> {
-    let wl = (
+    let asm = syscall_check!(
         libc::SYS_fcntl,
-        vec![
-            Rule::new(vec![Cond::new(
-                1,
-                ArgLen::Dword,
-                CmpOp::Le,
-                4, // Arg == 0-4
-            )?])?,
-            Rule::new(vec![Cond::new(
-                1,
-                ArgLen::Dword,
-                CmpOp::Eq,
-                libc::F_DUPFD_CLOEXEC as u64,
-            )?])?,
-        ],
+        Load(ABS, ArgLower(1).offset()),
+        Jump(JEQ, libc::F_DUPFD_CLOEXEC as u32, Some("Allow"), None),
+        Jump(JGT, 4, Some("NEXT_FILTER"), None),
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
 // The flags parameter of mmap() must not have:
@@ -72,16 +77,17 @@ fn fcntl_stdio() -> Result<WhitelistFrag> {
 //   - MAP_HUGETLB  (0x40000)
 //
 fn mmap_noexec() -> Result<WhitelistFrag> {
-    let wl = (
+    let mask = libc::MAP_LOCKED | libc::MAP_NONBLOCK | libc::MAP_HUGETLB;
+    let asm = syscall_check!(
         libc::SYS_mmap,
-        vec![Rule::new(vec![Cond::new(
-            3,
-            ArgLen::Dword,
-            CmpOp::MaskedEq(0x52000),
-            0,
-        )?])?],
+
+        Load(ABS, ArgLower(3).offset()),
+        Alu(AND, Const, mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
 // The prot parameter of mprotect() may only have:
@@ -91,16 +97,17 @@ fn mmap_noexec() -> Result<WhitelistFrag> {
 //   - PROT_WRITE (2)
 //
 fn mprotect_noexec() -> Result<WhitelistFrag> {
-    let wl = (
+    let mask = !(libc::PROT_READ | libc::PROT_WRITE | libc::PROT_NONE);
+    let asm = syscall_check!(
         libc::SYS_mprotect,
-        vec![Rule::new(vec![Cond::new(
-            2,
-            ArgLen::Dword,
-            CmpOp::Le,
-            2, // Arg == 0-2
-        )?])?],
+
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
 // The sockaddr parameter of sendto() must be
@@ -108,16 +115,17 @@ fn mprotect_noexec() -> Result<WhitelistFrag> {
 //   - NULL
 //
 fn sendto_addrless() -> Result<WhitelistFrag> {
-    let wl = (
+    let asm = syscall_check!(
         libc::SYS_sendto,
-        vec![Rule::new(vec![Cond::new(
-            4,
-            ArgLen::Qword,
-            CmpOp::Eq,
-            0, // Null sockaddr pointer
-        )?])?],
+
+        Load(ABS, ArgLower(4).offset()),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+        Load(ABS, ArgUpper(4).offset()),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
 // The second argument of ioctl() must be one of:
@@ -128,26 +136,18 @@ fn sendto_addrless() -> Result<WhitelistFrag> {
 //   - FIONCLEX (0x5450)
 //
 fn ioctl_restrict() -> Result<WhitelistFrag> {
-    let wl = (
+    let asm = syscall_check!(
         libc::SYS_ioctl,
-        vec![
-            Rule::new(vec![Cond::new(
-                1,
-                ArgLen::Dword,
-                CmpOp::Eq,
-                libc::FIONREAD,
-            )?])?,
-            Rule::new(vec![Cond::new(1, ArgLen::Dword, CmpOp::Eq, libc::FIONBIO)?])?,
-            Rule::new(vec![Cond::new(1, ArgLen::Dword, CmpOp::Eq, libc::FIOCLEX)?])?,
-            Rule::new(vec![Cond::new(
-                1,
-                ArgLen::Dword,
-                CmpOp::Eq,
-                libc::FIONCLEX,
-            )?])?,
-        ],
+        Load(ABS, ArgLower(1).offset()),
+        Jump(JEQ, libc::FIONREAD as u32, Some("Allow"), None),
+        Jump(JEQ, libc::FIONBIO as u32, Some("Allow"), None),
+        Jump(JEQ, libc::FIOCLEX as u32, Some("Allow"), None),
+        Jump(JEQ, libc::FIONCLEX as u32, Some("Allow"), None),
+        JumpTo("NEXT_FILTER"),
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
 // The first argument of kill() must be
@@ -155,33 +155,34 @@ fn ioctl_restrict() -> Result<WhitelistFrag> {
 //   - getpid()
 //
 fn kill_self() -> Result<WhitelistFrag> {
-    let wl = (
+    let asm = syscall_check!(
         libc::SYS_kill,
-        vec![Rule::new(vec![Cond::new(
-            0,
-            ArgLen::Dword,
-            CmpOp::Eq,
-            process::id() as u64,
-        )?])?],
+        Load(ABS, ArgLower(0).offset()),
+        Jump(JEQ, process::id(), Some("Allow"), None),
+        JumpTo("NEXT_FILTER"),
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
-// The first argument of tkill() must be
+/// The first argument of tkill() must be
 //
 //   - gettid()
 //
 fn tkill_self() -> Result<WhitelistFrag> {
-    let wl = (
+    // Rust ThreadId is not necessarily the same as the OS TID, so go
+    // deeper...
+    let tid = unsafe { libc::gettid() } as u32;
+    let asm = syscall_check!(
         libc::SYS_tkill,
-        vec![Rule::new(vec![Cond::new(
-            0,
-            ArgLen::Dword,
-            CmpOp::Eq,
-            unsafe { libc::gettid() } as u64,
-        )?])?],
+        Load(ABS, ArgLower(0).offset()),
+        Jump(JEQ, tid, Some("Allow"), None),
+        JumpTo("NEXT_FILTER"),
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
 // The first parameter of prctl() can be any of
@@ -195,55 +196,23 @@ fn tkill_self() -> Result<WhitelistFrag> {
 //   - PR_CAPBSET_DROP     (24)
 //
 fn prctl_stdio() -> Result<WhitelistFrag> {
-    let wl = (
+    let asm = syscall_check!(
         libc::SYS_prctl,
-        vec![
-            Rule::new(vec![Cond::new(
-                0,
-                ArgLen::Dword,
-                CmpOp::Eq,
-                libc::PR_SET_NAME as u64,
-            )?])?,
-            Rule::new(vec![Cond::new(
-                0,
-                ArgLen::Dword,
-                CmpOp::Eq,
-                libc::PR_GET_NAME as u64,
-            )?])?,
-            Rule::new(vec![Cond::new(
-                0,
-                ArgLen::Dword,
-                CmpOp::Eq,
-                libc::PR_GET_SECCOMP as u64,
-            )?])?,
-            Rule::new(vec![Cond::new(
-                0,
-                ArgLen::Dword,
-                CmpOp::Eq,
-                libc::PR_SET_SECCOMP as u64,
-            )?])?,
-            Rule::new(vec![Cond::new(
-                0,
-                ArgLen::Dword,
-                CmpOp::Eq,
-                libc::PR_SET_NO_NEW_PRIVS as u64,
-            )?])?,
-            Rule::new(vec![Cond::new(
-                0,
-                ArgLen::Dword,
-                CmpOp::Eq,
-                libc::PR_CAPBSET_READ as u64,
-            )?])?,
-            Rule::new(vec![Cond::new(
-                0,
-                ArgLen::Dword,
-                CmpOp::Eq,
-                libc::PR_CAPBSET_DROP as u64,
-            )?])?,
-        ],
+        Load(ABS, ArgLower(0).offset()),
+        Jump(JEQ, libc::PR_SET_NAME as u32, Some("Allow"), None),
+        Jump(JEQ, libc::PR_GET_NAME as u32, Some("Allow"), None),
+        Jump(JEQ, libc::PR_GET_SECCOMP as u32, Some("Allow"), None),
+        Jump(JEQ, libc::PR_SET_SECCOMP as u32, Some("Allow"), None),
+        Jump(JEQ, libc::PR_SET_NO_NEW_PRIVS as u32, Some("Allow"), None),
+        Jump(JEQ, libc::PR_CAPBSET_READ as u32, Some("Allow"), None),
+        Jump(JEQ, libc::PR_CAPBSET_DROP as u32, Some("Allow"), None),
+        JumpTo("NEXT_FILTER"),
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
+
 
 // The first argument of sys_clone_linux() must have:
 //
@@ -260,28 +229,37 @@ fn prctl_stdio() -> Result<WhitelistFrag> {
 //   - CLONE_UNTRACED (0x00800000)
 //
 fn clone_thread() -> Result<WhitelistFrag> {
-    let wl = (
+    let ok_mask = libc::CLONE_VM | libc::CLONE_FS | libc::CLONE_FILES | libc::CLONE_THREAD | libc::CLONE_SIGHAND;
+    let no_mask = libc::CLONE_NEWNS | libc::CLONE_PTRACE | libc::CLONE_UNTRACED;
+    let asm = syscall_check!(
         libc::SYS_clone,
-        vec![Rule::new(vec![
-            Cond::new(0, ArgLen::Dword, CmpOp::MaskedEq(0x00010f00), 0x00010f00)?,
-            Cond::new(0, ArgLen::Dword, CmpOp::MaskedEq(0x00822000), 0)?,
-        ])?],
+
+        Load(ABS, ArgLower(0).offset()),
+        Alu(AND, Const, ok_mask as u32),
+        Jump(JEQ, ok_mask as u32, None, Some("NEXT_FILTER")),
+
+        Load(ABS, ArgLower(0).offset()),
+        Alu(AND, Const, no_mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
+
 
 // The new_limit parameter of prlimit() must be
 //
 //   - NULL (0)
 //
 fn prlimit64_stdio() -> Result<WhitelistFrag> {
-    let wl = (
+    let asm = syscall_check!(
         libc::SYS_prlimit64,
-        vec![Rule::new(vec![
-            Cond::new(2, ArgLen::Qword, CmpOp::Eq, 0)?
-        ])?],
+        Load(ABS, ArgLower(2).offset()),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
 // The open() system call is permitted only when
@@ -295,25 +273,23 @@ fn prlimit64_stdio() -> Result<WhitelistFrag> {
 //   - __O_TMPFILE (020000000)
 //
 fn open_readonly() -> Result<WhitelistFrag> {
-    let wl = (
+    let mask = libc::O_CREAT | libc::O_TRUNC | __O_TMPFILE;
+    let asm = syscall_check!(
         libc::SYS_open,
-        vec![
-            Rule::new(vec![Cond::new(
-                1,
-                ArgLen::Dword,
-                CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                libc::O_RDONLY as u64,
-            )?])?,
-            Rule::new(vec![Cond::new(
-                1,
-                ArgLen::Dword,
-                CmpOp::MaskedEq(0o020001100),
-                0,
-            )?])?,
-        ],
+
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, libc::O_ACCMODE as u32),
+        Jump(JEQ, libc::O_RDONLY as u32, None, Some("NEXT_FILTER")),
+
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
+
 
 // The openat() system call is permitted only when
 //
@@ -326,24 +302,21 @@ fn open_readonly() -> Result<WhitelistFrag> {
 //   - __O_TMPFILE (020000000)
 //
 fn openat_readonly() -> Result<WhitelistFrag> {
-    let wl = (
+    let mask = libc::O_CREAT | libc::O_TRUNC | __O_TMPFILE;
+    let asm = syscall_check!(
         libc::SYS_openat,
-        vec![
-            Rule::new(vec![Cond::new(
-                2,
-                ArgLen::Dword,
-                CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                libc::O_RDONLY as u64,
-            )?])?,
-            Rule::new(vec![Cond::new(
-                2,
-                ArgLen::Dword,
-                CmpOp::MaskedEq(0o020001100),
-                0,
-            )?])?,
-        ],
+
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, libc::O_ACCMODE as u32),
+        Jump(JEQ, libc::O_RDONLY as u32, None, Some("NEXT_FILTER")),
+
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
 
@@ -358,41 +331,23 @@ fn openat_readonly() -> Result<WhitelistFrag> {
 //   - __O_TMPFILE (020000000)
 //
 fn open_writeonly() -> Result<WhitelistFrag> {
-    let wl = (
+    let mask = libc::O_CREAT | __O_TMPFILE;
+    let asm = syscall_check!(
         libc::SYS_open,
-        vec![
-            Rule::new(vec![
-                Cond::new(
-                    1,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                    libc::O_WRONLY as u64,
-                )?,
-                Cond::new(
-                    1,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq(0o020000100),
-                    0,
-                )?
 
-            ])?,
-            Rule::new(vec![
-                Cond::new(
-                    1,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                    libc::O_RDWR as u64,
-                )?,
-                Cond::new(
-                    1,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq(0o020000100),
-                    0,
-                )?
-            ])?,
-        ],
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, libc::O_ACCMODE as u32),
+        Jump(JEQ, libc::O_WRONLY as u32, Some("FLAG_CHECK"), None),
+        Jump(JEQ, libc::O_RDWR as u32, None, Some("NEXT_FILTER")),
+
+        Label("FLAG_CHECK"),
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
 
@@ -407,43 +362,24 @@ fn open_writeonly() -> Result<WhitelistFrag> {
 //   - __O_TMPFILE (020000000)
 //
 fn openat_writeonly() -> Result<WhitelistFrag> {
-    let wl = (
+    let mask = libc::O_CREAT | __O_TMPFILE;
+    let asm = syscall_check!(
         libc::SYS_openat,
-        vec![
-            Rule::new(vec![
-                Cond::new(
-                    2,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                    libc::O_WRONLY as u64,
-                )?,
-                Cond::new(
-                    2,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq(0o020000100),
-                    0,
-                )?
 
-            ])?,
-            Rule::new(vec![
-                Cond::new(
-                    2,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_ACCMODE as u64),
-                    libc::O_RDWR as u64,
-                )?,
-                Cond::new(
-                    2,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq(0o020000100),
-                    0,
-                )?
-            ])?,
-        ],
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, libc::O_ACCMODE as u32),
+        Jump(JEQ, libc::O_WRONLY as u32, Some("FLAG_CHECK"), None),
+        Jump(JEQ, libc::O_RDWR as u32, None, Some("NEXT_FILTER")),
+
+        Label("FLAG_CHECK"),
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
-
 
 // The mode parameter of chmod() can't have the following:
 //
@@ -452,20 +388,16 @@ fn openat_writeonly() -> Result<WhitelistFrag> {
 //   - S_ISUID (04000 setuid)
 //
 fn chmod_nobits() -> Result<WhitelistFrag> {
-    let wl = (
+    let mmask = libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID;
+    let asm = syscall_check!(
         libc::SYS_chmod,
-        vec![
-            Rule::new(vec![Cond::new(
-                1,
-                ArgLen::Dword,
-                CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
-                0,
-            )?])?,
-        ],
+        Load(ABS, ArgLower(1).offset()),
+        Alu(AND, Const, mmask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
-
 
 // The mode parameter of fchmod() can't have the following:
 //
@@ -474,20 +406,16 @@ fn chmod_nobits() -> Result<WhitelistFrag> {
 //   - S_ISUID (04000 setuid)
 //
 fn fchmod_nobits() -> Result<WhitelistFrag> {
-    let wl = (
+    let mmask = libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID;
+    let asm = syscall_check!(
         libc::SYS_fchmod,
-        vec![
-            Rule::new(vec![Cond::new(
-                1,
-                ArgLen::Dword,
-                CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
-                0,
-            )?])?,
-        ],
+        Load(ABS, ArgLower(1).offset()),
+        Alu(AND, Const, mmask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
-
 
 // The mode parameter of fchmodat() can't have the following:
 //
@@ -496,20 +424,16 @@ fn fchmod_nobits() -> Result<WhitelistFrag> {
 //   - S_ISUID (04000 setuid)
 //
 fn fchmodat_nobits() -> Result<WhitelistFrag> {
-    let wl = (
-        libc::SYS_fchmod,
-        vec![
-            Rule::new(vec![Cond::new(
-                2,
-                ArgLen::Dword,
-                CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
-                0,
-            )?])?,
-        ],
+    let mmask = libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID;
+    let asm = syscall_check!(
+        libc::SYS_fchmodat,
+        Load(ABS, ArgLower(1).offset()),
+        Alu(AND, Const, mmask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
-
 
 // If the flags parameter of open() has one of:
 //
@@ -523,40 +447,25 @@ fn fchmodat_nobits() -> Result<WhitelistFrag> {
 //   - S_ISUID (04000 setuid)
 //
 fn open_createonly() -> Result<WhitelistFrag> {
-    let wl = (
+    let mmask = libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID;
+    let asm = syscall_check!(
         libc::SYS_open,
-        vec![
-            Rule::new(vec![
-                Cond::new(
-                    1,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_CREAT as u64),
-                    libc::O_CREAT as u64,
-                )?,
-                Cond::new(
-                    2,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
-                    0,
-                )?,
-            ])?,
-            Rule::new(vec![
-                Cond::new(
-                    1,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq(0o020200000),
-                    0o020200000,
-                )?,
-                Cond::new(
-                    2,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
-                    0,
-                )?,
-            ])?,
-        ],
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, libc::O_CREAT as u32),
+        Jump(JEQ, libc::O_CREAT as u32, Some("FLAG_CHECK"), None),
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, __O_TMPFILE as u32),
+        Jump(JEQ, __O_TMPFILE as u32, Some("FLAG_CHECK"), Some("ALLOW")),
+
+        Label("FLAG_CHECK"),
+        Load(ABS, ArgLower(3).offset()),
+        Alu(AND, Const, mmask as u32),
+        Jump(JEQ, 0, Some("ALLOW"), Some("NEXT_FILTER")),
+
+        Label("ALLOW"),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
 
@@ -572,62 +481,43 @@ fn open_createonly() -> Result<WhitelistFrag> {
 //   - S_ISUID (04000 setuid)
 //
 fn openat_createonly() -> Result<WhitelistFrag> {
-    let wl = (
+    let mmask = libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID;
+    let asm = syscall_check!(
         libc::SYS_openat,
-        vec![
-            Rule::new(vec![
-                Cond::new(
-                    2,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq(libc::O_CREAT as u64),
-                    libc::O_CREAT as u64,
-                )?,
-                Cond::new(
-                    3,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
-                    0,
-                )?,
-            ])?,
-            Rule::new(vec![
-                Cond::new(
-                    2,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq(0o020200000),
-                    0o020200000,
-                )?,
-                Cond::new(
-                    3,
-                    ArgLen::Dword,
-                    CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
-                    0,
-                )?,
-            ])?,
-        ],
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, libc::O_CREAT as u32),
+        Jump(JEQ, libc::O_CREAT as u32, Some("FLAG_CHECK"), None),
+        Load(ABS, ArgLower(2).offset()),
+        Alu(AND, Const, __O_TMPFILE as u32),
+        Jump(JEQ, __O_TMPFILE as u32, Some("FLAG_CHECK"), Some("ALLOW")),
+
+        Label("FLAG_CHECK"),
+        Load(ABS, ArgLower(3).offset()),
+        Alu(AND, Const, mmask as u32),
+        Jump(JEQ, 0, Some("ALLOW"), Some("NEXT_FILTER")),
+
+        Label("ALLOW"),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
-
-// Then the mode parameter must not have:
+// The mode parameter of creat() must not have:
 //
 //   - S_ISVTX (01000 sticky)
 //   - S_ISGID (02000 setgid)
 //   - S_ISUID (04000 setuid)
 //
 fn create_restrict() -> Result<WhitelistFrag> {
-    let wl = (
+    let mmask = libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID;
+    let asm = syscall_check!(
         libc::SYS_creat,
-        vec![
-            Rule::new(vec![Cond::new(
-                1,
-                ArgLen::Dword,
-                CmpOp::MaskedEq((libc::S_ISVTX | libc::S_ISGID | libc::S_ISUID) as u64),
-                0,
-            )?])?,
-        ],
+        Load(ABS, ArgLower(1).offset()),
+        Alu(AND, Const, mmask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
 
@@ -638,26 +528,17 @@ fn create_restrict() -> Result<WhitelistFrag> {
 //   - F_SETLKW (7)
 //
 fn fcntl_lock() -> Result<WhitelistFrag> {
-    let wl = (
+    let asm = syscall_check!(
         libc::SYS_fcntl,
-        vec![
-            Rule::new(vec![
-                Cond::new(
-                    1,
-                    ArgLen::Dword,
-                    CmpOp::Ge,
-                    5,
-                )?,
-                Cond::new(
-                    1,
-                    ArgLen::Dword,
-                    CmpOp::Le,
-                    7,
-                )?,
-            ])?,
-        ]
+        Load(ABS, ArgLower(1).offset()),
+        Jump(JEQ, libc::F_GETLK as u32, Some("Allow"), None),
+        Jump(JEQ, libc::F_SETLK as u32, Some("Allow"), None),
+        Jump(JEQ, libc::F_SETLKW as u32, Some("Allow"), None),
+        JumpTo("NEXT_FILTER"),
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(wl)
+    Ok(compile(&asm)?)
 }
 
 
@@ -683,43 +564,173 @@ fn fcntl_lock() -> Result<WhitelistFrag> {
 //   - IPPROTO_TCP  (0x06)
 //   - IPPROTO_UDP  (0x11)
 //
-// static privileged void AllowSocketInet(struct Filter *f) {
-//   static const struct sock_filter fragment[] = {
-//       /* L0*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_linux_socket, 0, 15 - 1),
-//       /* L1*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[0])),
-//       /* L2*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x02, 1, 0),
-//       /* L3*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x0a, 0, 14 - 4),
-//       /* L4*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[1])),
-//       /* L5*/ BPF_STMT(BPF_ALU | BPF_AND | BPF_K, ~0x80800),
-//       /* L6*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x01, 1, 0),
-//       /* L7*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x02, 0, 14 - 8),
-//       /* L8*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[2])),
-//       /* L9*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x00, 3, 0),
-//       /*L10*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x01, 2, 0),
-//       /*L11*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x06, 1, 0),
-//       /*L12*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x11, 0, 1),
-//       /*L13*/ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-//       /*L14*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(nr)),
-//       /*L15*/ /* next filter */
-//   };
-//   AppendFilter(f, PLEDGE(fragment));
-// }
 fn socket_inet() -> Result<WhitelistFrag> {
-    Ok((0, Vec::new()))
+    let asm = syscall_check!(
+        libc::SYS_socket,
+
+        Load(ABS, ArgLower(0).offset()),
+        Jump(JEQ, libc::AF_INET as u32, Some("Type_Check"), None),
+        Jump(JEQ, libc::AF_INET6 as u32, Some("Type_Check"), Some("NEXT_FILTER")),
+
+        Label("Type_Check"),
+        Load(ABS, ArgLower(1).offset()),
+        Alu(AND, Const, !0x80800),
+        Jump(JEQ, libc::SOCK_STREAM as u32, Some("Proto_Check"), None),
+        Jump(JEQ, libc::SOCK_DGRAM as u32, Some("Proto_Check"), Some("NEXT_FILTER")),
+
+        Label("Proto_Check"),
+        Load(ABS, ArgLower(2).offset()),
+        Jump(JEQ, 0, Some("Allow"), None),
+        Jump(JEQ, libc::IPPROTO_ICMP as u32, Some("Allow"), None),
+        Jump(JEQ, libc::IPPROTO_TCP as u32, Some("Allow"), None),
+        Jump(JEQ, libc::IPPROTO_UDP as u32, Some("Allow"), None),
+
+        JumpTo("NEXT_FILTER"),
+
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
 }
 
-fn ioctl_int() -> Result<WhitelistFrag> {
-    Ok((0, Vec::new()))
+// The second argument of ioctl() must be one of:
+//
+//   - SIOCATMARK (0x8905)
+//
+fn ioctl_inet() -> Result<WhitelistFrag> {
+    const SIOCATMARK: u32 = 0x8905; // Not in libc
+    let asm = syscall_check!(
+        libc::SYS_ioctl,
+        Load(ABS, ArgLower(1).offset()),
+        Jump(JEQ, SIOCATMARK, Some("Allow"), None),
+        JumpTo("NEXT_FILTER"),
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
 }
 
+
+// The level argument of getsockopt() must be one of:
+//
+//   - SOL_SOCKET (1)
+//   - SOL_TCP    (6)
+//
+// The optname argument of getsockopt() must be one of:
+//
+//   - SO_TYPE      (0x03)
+//   - SO_ERROR     (0x04)
+//   - SO_REUSEPORT (0x0f)
+//   - SO_REUSEADDR (0x02)
+//   - SO_KEEPALIVE (0x09)
+//   - SO_RCVTIMEO  (0x14)
+//   - SO_SNDTIMEO  (0x15)
+//
 fn getsockopt_restrict() -> Result<WhitelistFrag> {
-    Ok((0, Vec::new()))
+    let asm = syscall_check!(
+        libc::SYS_getsockopt,
+
+        Load(ABS, ArgLower(1).offset()),
+        Jump(JEQ, libc::SOL_SOCKET as u32, Some("Opt_Check"), None),
+        Jump(JEQ, libc::SOL_TCP as u32, Some("Opt_Check"), Some("NEXT_FILTER")),
+
+        Label("Opt_Check"),
+        Load(ABS, ArgLower(2).offset()),
+        Jump(JEQ, libc::SO_TYPE as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_ERROR as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_REUSEPORT as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_REUSEADDR as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_KEEPALIVE as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_RCVTIMEO as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_SNDTIMEO as u32, Some("Allow"), None),
+
+        JumpTo("NEXT_FILTER"),
+
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
 }
 
+
+// The level argument of setsockopt() must be one of:
+//
+//   - SOL_IP     (0)
+//   - SOL_SOCKET (1)
+//   - SOL_TCP    (6)
+//
+// The optname argument of setsockopt() must be one of:
+//
+//   - TCP_NODELAY          (0x01)
+//   - TCP_CORK             (0x03)
+//   - TCP_KEEPIDLE         (0x04)
+//   - TCP_KEEPINTVL        (0x05)
+//   - SO_TYPE              (0x03)
+//   - SO_ERROR             (0x04)
+//   - SO_DONTROUTE         (0x05)
+//   - SO_REUSEPORT         (0x0f)
+//   - SO_REUSEADDR         (0x02)
+//   - SO_KEEPALIVE         (0x09)
+//   - SO_RCVTIMEO          (0x14)
+//   - SO_SNDTIMEO          (0x15)
+//   - IP_RECVTTL           (0x0c)
+//   - IP_RECVERR           (0x0b)
+//   - TCP_FASTOPEN         (0x17)
+//   - TCP_FASTOPEN_CONNECT (0x1e)
+//
 fn setsockopt_restrict() -> Result<WhitelistFrag> {
-    Ok((0, Vec::new()))
+    let asm = syscall_check!(
+        libc::SYS_getsockopt,
+
+        Load(ABS, ArgLower(1).offset()),
+        Jump(JEQ, libc::SOL_IP as u32, Some("Opt_Check"), None),
+        Jump(JEQ, libc::SOL_SOCKET as u32, Some("Opt_Check"), None),
+        Jump(JEQ, libc::SOL_TCP as u32, Some("Opt_Check"), Some("NEXT_FILTER")),
+
+        Label("Opt_Check"),
+        Load(ABS, ArgLower(2).offset()),
+        Jump(JEQ, libc::TCP_NODELAY as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TCP_CORK as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TCP_KEEPIDLE as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TCP_KEEPINTVL as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_TYPE as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_ERROR as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_DONTROUTE as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_REUSEPORT as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_REUSEADDR as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_KEEPALIVE as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_RCVTIMEO as u32, Some("Allow"), None),
+        Jump(JEQ, libc::SO_SNDTIMEO as u32, Some("Allow"), None),
+        Jump(JEQ, libc::IP_RECVTTL as u32, Some("Allow"), None),
+        Jump(JEQ, libc::IP_RECVERR as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TCP_FASTOPEN as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TCP_FASTOPEN_CONNECT as u32, Some("Allow"), None),
+
+        JumpTo("NEXT_FILTER"),
+
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
 }
 
+fn bpf_header() -> Result<WhitelistFrag> {
+    // FIXME: Move default promises here?
+    let asm = [
+        Load(ABS, Arch.offset()),
+        Jump(JEQ, AUDIT_ARCH_X86_64, Some("START"), None),
+        Return(Const, SeccompReturn::KillProcess.into()),
+        Label("START"),
+    ];
+
+    Ok(compile(&asm)?)
+}
+
+fn bpf_footer(violation: ViolationAction) -> Result<WhitelistFrag> {
+    let retval = violation.into();
+    let asm = [Return(Const, retval)];
+    Ok(compile(&asm)?)
+}
 
 
 fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
@@ -747,25 +758,10 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
         CreatRestrict => create_restrict(),
         FcntlLock => fcntl_lock(),
         SocketInet => socket_inet(),
-        IoctlInet => ioctl_int(),
+        IoctlInet => ioctl_inet(),
         GetsockoptRestrict => getsockopt_restrict(),
         SetsockoptRestrict => setsockopt_restrict(),
 
-    }
-}
-
-
-impl From<ViolationAction> for Action {
-    fn from(va: ViolationAction) -> Self {
-        match va {
-            ViolationAction::Allow => Action::Allow,
-            ViolationAction::Errno(e) => Action::Errno(e),
-            ViolationAction::KillThread => Action::KillThread,
-            ViolationAction::KillProcess => Action::KillProcess,
-            ViolationAction::Log => Action::Log,
-            ViolationAction::Trace(t) => Action::Trace(t),
-            ViolationAction::Trap => Action::Trap,
-        }
     }
 }
 
@@ -775,8 +771,9 @@ pub fn pledge(promises: Vec<Promise>) -> Result<()> {
 }
 
 
-fn promises_to_prog(promises: Vec<Promise>, violation: ViolationAction) -> Result<BpfProgram> {
-    // Convert all promises into filter specs.
+fn promises_to_prog(promises: Vec<Promise>, violation: ViolationAction) -> Result<WhitelistFrag> {
+    // Convert all promises into filter specs (lists of allowed
+    // syscalls & params).
     let defaults = vec![Promise::Default];
     let filters = defaults
         .into_iter()
@@ -787,43 +784,54 @@ fn promises_to_prog(promises: Vec<Promise>, violation: ViolationAction) -> Resul
         .flatten()
         .collect::<Vec<&Filtered>>();
 
-    // Filters to seccompiler BPF IR
+    // Convert filters to seccomp BPF
     let whitelist = filters
         .into_iter()
         .map(oath_to_bpf)
         .collect::<Result<Vec<WhitelistFrag>>>()?;
 
-    // Seccomp takes a BTreeMap with the syscall as the key. This
-    // means that any duplicate syscall rules will silently overwrite
-    // previous ones. So we need to dedup these manually here.
-    // See https://github.com/rust-vmm/seccompiler/issues/42
-    let mut btrules: BTreeMap<libc::c_long, Vec<Rule>> = BTreeMap::new();
-    for (syscall, rules) in whitelist {
-        match btrules.get_mut(&syscall) {
-            Some(v) => {
-                v.extend(rules);
-            },
-            None => {
-                btrules.insert(syscall, rules);
-            }
-        }
-    }
+    // Assemble parts
+    let header = [bpf_header()?];
+    let footer = [bpf_footer(violation)?];
+    let prog = header
+        .into_iter()
+        .chain(whitelist)
+        .chain(footer.into_iter())
+        .flatten()
+        .collect::<WhitelistFrag>();
 
-    let sf = SeccompFilter::new(
-        btrules,
-        Action::from(violation),
-        Action::Allow,
-        ARCH.try_into()?,
-    )?;
-
-    let bpf_prog: BpfProgram = sf.try_into()?;
-
-    Ok(bpf_prog)
+    Ok(prog)
 }
 
+
 pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> {
-    let bpf_prog = promises_to_prog(promises, violation)?;
-    apply_filter(&bpf_prog)?;
+    // Coerce the sock_filter list into a C-like pointer. The kernel
+    // copies the program, so we don't need to worry about lifetimes.
+    let mut bpf_prog = promises_to_prog(promises, violation)?;
+    let prog_ref = &mut bpf_prog;
+
+    let bpf_prog = libc::sock_fprog {
+        len: prog_ref.len() as u16,
+        filter: prog_ref.as_mut_ptr(),
+    };
+    let bpf_prog_ptr = &bpf_prog as *const libc::sock_fprog;
+
+    // Disable new privs, and load seccomp...
+    let ret = unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) };
+    if ret != 0 {
+        return Err(Error::SysErr(std::io::Error::last_os_error()));
+    }
+
+    let ret = unsafe {
+        libc::prctl(
+            libc::PR_SET_SECCOMP,
+            libc::SECCOMP_MODE_FILTER,
+            bpf_prog_ptr,
+        )
+    };
+    if ret != 0 {
+        return Err(Error::SysErr(std::io::Error::last_os_error()));
+    }
 
     Ok(())
 }
@@ -851,7 +859,7 @@ mod tests {
         let prog = promises_to_prog(vec![StdIO], ViolationAction::Errno(999)).unwrap();
         let sc_data = syscall(libc::SYS_personality, [0;6]);
 
-        let ret = run_seccomp(prog, sc_data).unwrap();
+        let ret = run_seccomp(&prog, sc_data).unwrap();
 
         assert!(ret == SeccompReturn::Errno(999), "Failed, ret = 0x{:?}", ret);
     }
@@ -861,7 +869,7 @@ mod tests {
         let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
         let sc_data = syscall(libc::SYS_personality, [0;6]);
 
-        let ret = run_seccomp(prog, sc_data).unwrap();
+        let ret = run_seccomp(&prog, sc_data).unwrap();
 
         assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
     }
@@ -872,31 +880,94 @@ mod tests {
         let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
         let sc_data = syscall(libc::SYS_gettimeofday, [0;6]);
 
-        let ret = run_seccomp(prog, sc_data).unwrap();
+        let ret = run_seccomp(&prog, sc_data).unwrap();
 
         assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
     }
 
 
     #[test_log::test]
-    fn no_fcntl() {
-        let prog = promises_to_prog(vec![StdIO, CPath],
-                                    ViolationAction::KillProcess).unwrap();
-        let sc_data = syscall(libc::SYS_fcntl, [69, libc::F_GETLK as u64, 0, 0, 0, 0]);
+    fn rust_file_open() {
+        // openat(AT_FDCWD, "file.txt", O_WRONLY|O_CREAT|O_CLOEXEC, 0666) = 257
+        let prog = promises_to_prog(vec![StdIO, CPath], ViolationAction::KillProcess).unwrap();
 
-        let ret = run_seccomp(prog, sc_data).unwrap();
+        let sc_data = syscall(libc::SYS_openat, [0, 0, (libc::O_WRONLY | libc::O_CREAT | libc::O_CLOEXEC) as u64, 0o666, 0, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
+    }
 
+    #[test_log::test]
+    fn fcntl_stdio() {
+        let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
+
+        let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_DUPFD_CLOEXEC as u64, 0, 0, 0, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
+
+        let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_SETFD as u64, 0, 0, 0, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
+
+        let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_NOTIFY as u64, 0, 0, 0, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
         assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
     }
 
 
     #[test_log::test]
-    fn fcntl_ok() {
+    fn no_fcntl_lock() {
+        let prog = promises_to_prog(vec![StdIO, CPath],
+                                    ViolationAction::KillProcess).unwrap();
+        let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_GETLK as u64, 0, 0, 0, 0]);
+
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+
+        assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
+    }
+
+    #[test_log::test]
+    fn sendto_addr() {
+        let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
+
+        let sc_data = syscall(libc::SYS_sendto, [0, 0, 0, 0, !0, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
+
+        let sc_data = syscall(libc::SYS_sendto, [0, 0, 0, 0, 0xffffffff00000000, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
+        let sc_data = syscall(libc::SYS_sendto, [0, 0, 0, 0, 0x00000000ffffffff, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::KillProcess, "Failed, ret = 0x{:?}", ret);
+
+        let sc_data = syscall(libc::SYS_sendto, [0, 0, 0, 0, 0, 0]);
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+        assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
+    }
+
+
+    #[test_log::test]
+    fn fcntl_lock_ok() {
         let prog = promises_to_prog(vec![StdIO, CPath, FLock],
                                     ViolationAction::KillProcess).unwrap();
-        let sc_data = syscall(libc::SYS_fcntl, [69, libc::F_GETLK as u64, 0, 0, 0, 0]);
+        let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_GETLK as u64, 0, 0, 0, 0]);
 
-        let ret = run_seccomp(prog, sc_data).unwrap();
+        let ret = run_seccomp(&prog, sc_data).unwrap();
+
+        assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
+    }
+
+    #[test_log::test]
+    fn fcntl_socket_ok() {
+        let prog = promises_to_prog(vec![Inet], ViolationAction::KillProcess).unwrap();
+        let sc_data = syscall(libc::SYS_socket, [
+            libc::AF_INET as u64,
+            (libc::SOCK_STREAM | libc::SOCK_NONBLOCK) as u64,
+            libc::IPPROTO_TCP as u64,
+            0, 0, 0
+        ]);
+
+        let ret = run_seccomp(&prog, sc_data).unwrap();
 
         assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
     }

@@ -66,6 +66,21 @@ pub enum SeccompReturn {
     Allow,
 }
 
+impl From<SeccompReturn> for u32 {
+    fn from(ret: SeccompReturn) -> u32 {
+        use SeccompReturn::*;
+        match ret {
+            KillProcess => SECCOMP_RET_KILL_PROCESS,
+            KillThread => SECCOMP_RET_KILL_THREAD,
+            Trap => SECCOMP_RET_TRAP,
+            Errno(e) => SECCOMP_RET_ERRNO | e,
+            Trace(t) => SECCOMP_RET_TRACE | t,
+            Log => SECCOMP_RET_LOG,
+            Allow => SECCOMP_RET_ALLOW,
+        }
+    }
+}
+
 impl TryFrom<u32> for SeccompReturn {
     type Error = Error;
     fn try_from(ret: u32) -> Result<Self> {
@@ -111,8 +126,8 @@ impl FieldOffset {
 }
 
 
-pub fn run_seccomp(prog: BPFProg, syscall: libc::seccomp_data) -> Result<SeccompReturn> {
-    let code = BpfVM::new(prog)?.run(any_to_data(&syscall))?;
+pub fn run_seccomp(prog: &BPFProg, syscall: libc::seccomp_data) -> Result<SeccompReturn> {
+    let code = BpfVM::new(&prog)?.run(any_to_data(&syscall))?;
     SeccompReturn::try_from(code)
 }
 
@@ -170,7 +185,7 @@ mod tests {
             Return(Const, 99),
         ];
         let prog = compile(&asm).unwrap();
-        let mut vm = BpfVM::new(prog).unwrap();
+        let mut vm = BpfVM::new(&prog).unwrap();
 
         let sc_data = libc::seccomp_data {
             nr: -1,

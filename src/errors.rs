@@ -15,10 +15,9 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-use seccompiler;
 use std::result;
 use thiserror::Error;
-
+use bpfvm;
 use crate::promises::Promise;
 
 #[derive(Debug, Error)]
@@ -26,9 +25,9 @@ pub enum Error {
     #[error("Promise {0:?} is not implemented.")]
     UndefinedPromise(Promise),
     #[error(transparent)]
-    SysErr(#[from] seccompiler::Error),
+    SysErr(#[from] std::io::Error),
     #[error(transparent)]
-    SecCompilerErr(#[from] seccompiler::BackendError),
+    BPFErr(#[from] bpfvm::Error),
 }
 
 pub type Result<T> = result::Result<T, Error>;
