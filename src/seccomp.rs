@@ -70,19 +70,29 @@ fn fcntl_stdio() -> Result<WhitelistFrag> {
     Ok(compile(&asm)?)
 }
 
-// The flags parameter of mmap() must not have:
+// The prot parameter of mmap() may only have:
+//
+//   - PROT_NONE  (0)
+//   - PROT_READ  (1)
+//   - PROT_WRITE (2)
+//
+// The flags parameter must not have:
 //
 //   - MAP_LOCKED   (0x02000)
+//   - MAP_POPULATE (0x08000)
 //   - MAP_NONBLOCK (0x10000)
 //   - MAP_HUGETLB  (0x40000)
 //
 fn mmap_noexec() -> Result<WhitelistFrag> {
-    let mask = libc::MAP_LOCKED | libc::MAP_NONBLOCK | libc::MAP_HUGETLB;
+    let fmask = libc::MAP_LOCKED | libc::MAP_POPULATE | libc::MAP_NONBLOCK | libc::MAP_HUGETLB;
     let asm = syscall_check!(
         libc::SYS_mmap,
 
+        Load(ABS, ArgLower(2).offset()),
+        Jump(JGT, 2, Some("NEXT_FILTER"), None),
+
         Load(ABS, ArgLower(3).offset()),
-        Alu(AND, Const, mask as u32),
+        Alu(AND, Const, fmask as u32),
         Jump(JEQ, 0, None, Some("NEXT_FILTER")),
 
         Return(Const, SeccompReturn::Allow.into())
@@ -761,6 +771,107 @@ fn socket_unix() -> Result<WhitelistFrag> {
 }
 
 
+// The second argument of ioctl() must be one of:
+//
+//   - TCGETS     (0x5401)
+//   - TCSETS     (0x5402)
+//   - TCSETSW    (0x5403)
+//   - TCSETSF    (0x5404)
+//   - TIOCGWINSZ (0x5413)
+//   - TIOCSPGRP  (0x5410)
+//   - TIOCGPGRP  (0x540f)
+//   - TIOCSWINSZ (0x5414)
+//   - TCFLSH     (0x540b)
+//   - TCXONC     (0x540a)
+//   - TCSBRK     (0x5409)
+//   - TIOCSBRK   (0x5427)
+//
+// static privileged void AllowIoctlTty(struct Filter *f) {
+//   static const struct sock_filter fragment[] = {
+//       /* L0*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_linux_ioctl, 0, 16 - 1),
+//       /* L1*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(args[1])),
+//       /* L2*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5401, 11, 0),
+//       /* L3*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5402, 10, 0),
+//       /* L4*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5403, 9, 0),
+//       /* L5*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5404, 8, 0),
+//       /* L6*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5413, 7, 0),
+//       /* L7*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5410, 6, 0),
+//       /* L8*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x540f, 5, 0),
+//       /* L9*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5414, 4, 0),
+//       /*L10*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x540b, 3, 0),
+//       /*L11*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x540a, 2, 0),
+//       /*L12*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5409, 1, 0),
+//       /*L13*/ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x5427, 0, 1),
+//       /*L14*/ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+//       /*L15*/ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, OFF(nr)),
+//       /*L16*/ /* next filter */
+//   };
+//   AppendFilter(f, PLEDGE(fragment));
+// }
+fn ioctl_tty() -> Result<WhitelistFrag> {
+    let asm = syscall_check!(
+        libc::SYS_ioctl,
+        Load(ABS, ArgLower(1).offset()),
+        Jump(JEQ, libc::TCGETS as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TCSETS as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TCSETSW as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TCSETSF as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TIOCGWINSZ as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TIOCSPGRP as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TIOCGPGRP as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TIOCSWINSZ as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TCFLSH as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TCXONC as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TCSBRK as u32, Some("Allow"), None),
+        Jump(JEQ, libc::TIOCSBRK as u32, Some("Allow"), None),
+        JumpTo("NEXT_FILTER"),
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
+}
+
+
+// The first argument of sys_clone_linux() must NOT have:
+//
+//   - CLONE_NEWNS    (0x00020000)
+//   - CLONE_PTRACE   (0x00002000)
+//   - CLONE_UNTRACED (0x00800000)
+//
+fn clone_restrict() -> Result<WhitelistFrag> {
+    let no_mask = libc::CLONE_NEWNS | libc::CLONE_PTRACE | libc::CLONE_UNTRACED;
+    let asm = syscall_check!(
+        libc::SYS_clone,
+
+        Load(ABS, ArgLower(0).offset()),
+        Alu(AND, Const, no_mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
+}
+
+// The flags parameter of mmap() must not have:
+//
+//   - MAP_LOCKED   (0x02000)
+//   - MAP_NONBLOCK (0x10000)
+//   - MAP_HUGETLB  (0x40000)
+//
+fn mmap_exec() -> Result<WhitelistFrag> {
+    let mask = libc::MAP_LOCKED | libc::MAP_NONBLOCK | libc::MAP_HUGETLB;
+    let asm = syscall_check!(
+        libc::SYS_mmap,
+
+        Load(ABS, ArgLower(3).offset()),
+        Alu(AND, Const, mask as u32),
+        Jump(JEQ, 0, None, Some("NEXT_FILTER")),
+
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
+}
+
 fn bpf_header() -> Result<WhitelistFrag> {
     // FIXME: Move default promises here?
     let asm = [
@@ -809,6 +920,9 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
         GetsockoptRestrict => getsockopt_restrict(),
         SetsockoptRestrict => setsockopt_restrict(),
         SocketUnix => socket_unix(),
+        IoctlTty => ioctl_tty(),
+        CloneRestrict => clone_restrict(),
+        MmapExec => mmap_exec(),
     }
 }
 

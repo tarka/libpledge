@@ -30,6 +30,19 @@ pub enum Promise {
     FAttr,
     Inet,
     Unix,
+    Dns,
+    Tty,
+    RecvFd,
+    SendFd,
+    Proc,
+    Id,
+    Chown,
+    SetTime,
+    ProtExec,
+    Exec,
+    VmInfo,
+    TmpPath,
+    Unveil,
 }
 use Promise::*;
 
@@ -62,6 +75,9 @@ pub(crate) enum Filtered {
     GetsockoptRestrict,
     SetsockoptRestrict,
     SocketUnix,
+    IoctlTty,
+    CloneRestrict,
+    MmapExec,
 }
 use Filtered::*;
 
@@ -309,6 +325,137 @@ lazy_static! {
                 SetsockoptRestrict,
                 Whitelist(libc::SYS_getpeername),
                 Whitelist(libc::SYS_getsockname),
+            }
+        ),
+        (
+            Dns,
+            vec! {
+                SocketInet,
+                Whitelist(libc::SYS_bind),
+                Whitelist(libc::SYS_sendto),
+                Whitelist(libc::SYS_connect),
+                Whitelist(libc::SYS_recvfrom),
+                Whitelist(libc::SYS_newfstatat),
+                OpenatReadonly,
+                Whitelist(libc::SYS_read),
+                Whitelist(libc::SYS_close),
+            }
+        ),
+        (
+            Tty,
+            vec! {
+                IoctlTty,
+            }
+        ),
+        (
+            RecvFd,
+            vec! {
+                Whitelist(libc::SYS_recvmsg),
+                Whitelist(libc::SYS_recvmmsg),
+            }
+        ),
+        (
+            SendFd,
+            vec! {
+                Whitelist(libc::SYS_recvmsg),
+                Whitelist(libc::SYS_recvmmsg),
+            }
+        ),
+        (
+            Proc,
+            vec! {
+                Whitelist(libc::SYS_fork),
+                Whitelist(libc::SYS_vfork),
+                CloneRestrict,
+                Whitelist(libc::SYS_kill),
+                Whitelist(libc::SYS_setsid),
+                Whitelist(libc::SYS_setpgid),
+                Whitelist(libc::SYS_prlimit64),
+                Whitelist(libc::SYS_setrlimit),
+                Whitelist(libc::SYS_getpriority),
+                Whitelist(libc::SYS_setpriority),
+                Whitelist(libc::SYS_ioprio_get),
+                Whitelist(libc::SYS_ioprio_set),
+                Whitelist(libc::SYS_sched_getscheduler),
+                Whitelist(libc::SYS_sched_setscheduler),
+                Whitelist(libc::SYS_sched_get_priority_min),
+                Whitelist(libc::SYS_sched_get_priority_max),
+                Whitelist(libc::SYS_sched_getaffinity),
+                Whitelist(libc::SYS_sched_setaffinity),
+                Whitelist(libc::SYS_sched_getparam),
+                Whitelist(libc::SYS_sched_setparam),
+                Whitelist(libc::SYS_tkill),
+                Whitelist(libc::SYS_tgkill),
+            }
+        ),
+        (
+            Id,
+            vec! {
+                Whitelist(libc::SYS_setuid),
+                Whitelist(libc::SYS_setreuid),
+                Whitelist(libc::SYS_setresuid),
+                Whitelist(libc::SYS_setgid),
+                Whitelist(libc::SYS_setregid),
+                Whitelist(libc::SYS_setresgid),
+                Whitelist(libc::SYS_setgroups),
+                Whitelist(libc::SYS_prlimit64),
+                Whitelist(libc::SYS_setrlimit),
+                Whitelist(libc::SYS_getpriority),
+                Whitelist(libc::SYS_setpriority),
+                Whitelist(libc::SYS_setfsuid),
+                Whitelist(libc::SYS_setfsgid),
+            }
+        ),
+        (
+            Chown,
+            vec! {
+                Whitelist(libc::SYS_chown),
+                Whitelist(libc::SYS_fchown),
+                Whitelist(libc::SYS_lchown),
+                Whitelist(libc::SYS_fchownat),
+            }
+        ),
+        (
+            SetTime,
+            vec! {
+                Whitelist(libc::SYS_settimeofday),
+                Whitelist(libc::SYS_clock_adjtime),
+            }
+        ),
+        (
+            ProtExec,
+            vec! {
+                MmapExec,
+                Whitelist(libc::SYS_mprotect),
+            }
+        ),
+        (
+            Exec,
+            vec! {
+                Whitelist(libc::SYS_execve),
+                Whitelist(libc::SYS_execveat),
+            }
+        ),
+        (
+            VmInfo,
+            vec! {
+                Whitelist(libc::SYS_sched_yield),
+            }
+        ),
+        (
+            TmpPath,
+            vec! {
+                Whitelist(libc::SYS_lstat),
+                Whitelist(libc::SYS_unlink),
+                Whitelist(libc::SYS_unlinkat),
+            }
+        ),
+        (
+            Unveil,
+            vec! {
+                Whitelist(libc::SYS_landlock_create_ruleset),
+                Whitelist(libc::SYS_landlock_add_rule),
+                Whitelist(libc::SYS_landlock_restrict_self),
             }
         ),
     ]);
