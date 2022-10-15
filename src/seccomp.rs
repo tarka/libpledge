@@ -714,6 +714,53 @@ fn setsockopt_restrict() -> Result<WhitelistFrag> {
     Ok(compile(&asm)?)
 }
 
+
+// The family parameter of socket() must be one of:
+//
+//   - AF_UNIX (1)
+//   - AF_LOCAL (1)
+//
+// The type parameter of socket() will ignore:
+//
+//   - SOCK_CLOEXEC  (0x80000)
+//   - SOCK_NONBLOCK (0x00800)
+//
+// The type parameter of socket() must be one of:
+//
+//   - SOCK_STREAM (1)
+//   - SOCK_DGRAM  (2)
+//
+// The protocol parameter of socket() must be one of:
+//
+//   - 0
+//
+fn socket_unix() -> Result<WhitelistFrag> {
+    let asm = syscall_check!(
+        libc::SYS_socket,
+
+        Load(ABS, ArgLower(0).offset()),
+        Jump(JEQ, libc::AF_UNIX as u32, Some("Type_Check"), None),
+        Jump(JEQ, libc::AF_LOCAL as u32, Some("Type_Check"), Some("NEXT_FILTER")),
+
+        Label("Type_Check"),
+        Load(ABS, ArgLower(1).offset()),
+        Alu(AND, Const, !0x80800),
+        Jump(JEQ, libc::SOCK_STREAM as u32, Some("Proto_Check"), None),
+        Jump(JEQ, libc::SOCK_DGRAM as u32, Some("Proto_Check"), Some("NEXT_FILTER")),
+
+        Label("Proto_Check"),
+        Load(ABS, ArgLower(2).offset()),
+        Jump(JEQ, 0, Some("Allow"), None),
+
+        JumpTo("NEXT_FILTER"),
+
+        Label("Allow"),
+        Return(Const, SeccompReturn::Allow.into())
+    );
+    Ok(compile(&asm)?)
+}
+
+
 fn bpf_header() -> Result<WhitelistFrag> {
     // FIXME: Move default promises here?
     let asm = [
@@ -761,7 +808,7 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
         IoctlInet => ioctl_inet(),
         GetsockoptRestrict => getsockopt_restrict(),
         SetsockoptRestrict => setsockopt_restrict(),
-
+        SocketUnix => socket_unix(),
     }
 }
 

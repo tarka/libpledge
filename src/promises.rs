@@ -29,6 +29,7 @@ pub enum Promise {
     FLock,
     FAttr,
     Inet,
+    Unix,
 }
 use Promise::*;
 
@@ -60,6 +61,7 @@ pub(crate) enum Filtered {
     IoctlInet,
     GetsockoptRestrict,
     SetsockoptRestrict,
+    SocketUnix,
 }
 use Filtered::*;
 
@@ -287,6 +289,22 @@ lazy_static! {
                 Whitelist(libc::SYS_accept),
                 Whitelist(libc::SYS_accept4),
                 IoctlInet,
+                GetsockoptRestrict,
+                SetsockoptRestrict,
+                Whitelist(libc::SYS_getpeername),
+                Whitelist(libc::SYS_getsockname),
+            }
+        ),
+        (
+            Unix,
+            vec! {
+                SocketUnix,
+                Whitelist(libc::SYS_listen),
+                Whitelist(libc::SYS_bind),
+                Whitelist(libc::SYS_connect),
+                Whitelist(libc::SYS_sendto),
+                Whitelist(libc::SYS_accept),
+                Whitelist(libc::SYS_accept4),
                 GetsockoptRestrict,
                 SetsockoptRestrict,
                 Whitelist(libc::SYS_getpeername),

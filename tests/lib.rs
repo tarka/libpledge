@@ -21,7 +21,7 @@ use util::{fork_expect_code, fork_expect_sig, tmpfile};
 use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
-    time::{SystemTime, UNIX_EPOCH}, ffi::CString, os::unix::prelude::AsRawFd,
+    time::{SystemTime, UNIX_EPOCH}, ffi::CString, os::unix::{prelude::AsRawFd, net::UnixListener},
 };
 
 use libc;
@@ -243,6 +243,30 @@ fn fattr_no_setuid() {
             let mut fd = File::create(tmpfile()).unwrap();
             fd.write_all(b"some dummy data").unwrap();
             unsafe { libc::fchmod(fd.as_raw_fd(), libc::S_ISUID | 0o666) };
+        }
+        unsafe { libc::exit(99) };
+    });
+}
+
+#[test]
+fn unix_socket_disabled() {
+    fork_expect_sig(Signal::SIGSYS, || {
+        pledge(vec![StdIO]).unwrap();
+        {
+            let sockp = tmpfile();
+            let mut _sock = UnixListener::bind(sockp).unwrap();
+        }
+        unsafe { libc::exit(99) };
+    });
+}
+
+#[test]
+fn unix_socket_enabled() {
+    fork_expect_code(99, || {
+        pledge(vec![StdIO, Unix]).unwrap();
+        {
+            let sockp = tmpfile();
+            let mut _sock = UnixListener::bind(sockp).unwrap();
         }
         unsafe { libc::exit(99) };
     });
