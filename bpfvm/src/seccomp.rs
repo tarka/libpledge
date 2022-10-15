@@ -16,7 +16,6 @@
  */
 
 
-use crate::{BPFProg, BpfVM, any_to_data};
 use crate::errors::{Error, Result};
 
 
@@ -126,18 +125,12 @@ impl FieldOffset {
 }
 
 
-pub fn run_seccomp(prog: &BPFProg, syscall: libc::seccomp_data) -> Result<SeccompReturn> {
-    let code = BpfVM::new(&prog)?.run(any_to_data(&syscall))?;
-    SeccompReturn::try_from(code)
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use libc;
     use test_log;
-    use crate::{any_to_data, BpfVM};
+    use crate::vm::{any_to_data, BpfVM};
 
     #[test_log::test]
     fn test_offsets() {

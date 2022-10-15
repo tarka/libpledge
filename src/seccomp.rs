@@ -1002,9 +1002,17 @@ pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Re
 mod tests {
     use super::*;
     use crate::{Promise::*, ViolationAction};
-    use bpfvm::seccomp::*;
+    use bpfvm::{BPFProg, Result};
+    use bpfvm::vm::{any_to_data, BpfVM};
+    use bpfvm::seccomp::SeccompReturn;
     use libc::seccomp_data;
     use test_log;
+
+    pub fn run_seccomp(prog: &BPFProg, syscall: libc::seccomp_data) -> Result<SeccompReturn> {
+        let code = BpfVM::new(&prog)?.run(any_to_data(&syscall))?;
+        SeccompReturn::try_from(code)
+    }
+
 
     fn syscall(call: i64, args: [u64; 6]) -> seccomp_data {
         libc::seccomp_data {
@@ -1132,6 +1140,5 @@ mod tests {
 
         assert!(ret == SeccompReturn::Allow, "Failed, ret = 0x{:?}", ret);
     }
-
 
 }

@@ -139,7 +139,7 @@ pub fn bpf_jmp(op: JmpOp, k: u32, jt: u8, jf: u8) -> sock_filter {
 mod tests {
     use test_log;
     use super::*;
-    use crate::{any_to_data, BpfVM};
+    use crate::vm::{any_to_data, BpfVM};
 
     const WORDS: u32 = 4;
 

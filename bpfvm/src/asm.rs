@@ -115,7 +115,7 @@ mod tests {
     use super::*;
     use libc;
     use test_log;
-    use crate::{any_to_data, BpfVM};
+    use crate::vm::{any_to_data, BpfVM};
 
     #[test_log::test]
     fn test_simple_jump() {
