@@ -24,7 +24,7 @@ use bpfvm::{
 use crate::{
     errors::{Error, Result},
     promises::{Filtered::{self, *}, Promise, PROMISES},
-    ViolationAction,
+    Violation,
 };
 
 pub type WhitelistFrag = Vec<libc::sock_filter>;
@@ -884,14 +884,14 @@ fn bpf_header() -> Result<WhitelistFrag> {
     Ok(compile(&asm)?)
 }
 
-fn bpf_footer(violation: ViolationAction) -> Result<WhitelistFrag> {
+fn bpf_footer(violation: Violation) -> Result<WhitelistFrag> {
     let retval = violation.into();
     let asm = [Return(Const, retval)];
     Ok(compile(&asm)?)
 }
 
 
-fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
+fn pledge_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     match filter {
         Whitelist(syscall) => whitelist_syscall(*syscall),
         FcntlStdio => fcntl_stdio(),
@@ -928,11 +928,11 @@ fn oath_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
 
 
 pub fn pledge(promises: Vec<Promise>) -> Result<()> {
-    pledge_override(promises, ViolationAction::KillProcess)
+    pledge_override(promises, Violation::KillProcess)
 }
 
 
-fn promises_to_prog(promises: Vec<Promise>, violation: ViolationAction) -> Result<WhitelistFrag> {
+fn promises_to_prog(promises: Vec<Promise>, violation: Violation) -> Result<WhitelistFrag> {
     // Convert all promises into filter specs (lists of allowed
     // syscalls & params).
     let defaults = vec![Promise::Default];
@@ -948,7 +948,7 @@ fn promises_to_prog(promises: Vec<Promise>, violation: ViolationAction) -> Resul
     // Convert filters to seccomp BPF
     let whitelist = filters
         .into_iter()
-        .map(oath_to_bpf)
+        .map(pledge_to_bpf)
         .collect::<Result<Vec<WhitelistFrag>>>()?;
 
     // Assemble parts
@@ -965,7 +965,7 @@ fn promises_to_prog(promises: Vec<Promise>, violation: ViolationAction) -> Resul
 }
 
 
-pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Result<()> {
+pub fn pledge_override(promises: Vec<Promise>, violation: Violation) -> Result<()> {
     // Coerce the sock_filter list into a C-like pointer. The kernel
     // copies the program, so we don't need to worry about lifetimes.
     let mut bpf_prog = promises_to_prog(promises, violation)?;
@@ -1001,7 +1001,7 @@ pub fn pledge_override(promises: Vec<Promise>, violation: ViolationAction) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Promise::*, ViolationAction};
+    use crate::{Promise::*, Violation};
     use bpfvm::{BPFProg, Result};
     use bpfvm::vm::{any_to_data, BpfVM};
     use bpfvm::seccomp::SeccompReturn;
@@ -1025,7 +1025,7 @@ mod tests {
 
     #[test_log::test]
     fn stdio_personality_errno() {
-        let prog = promises_to_prog(vec![StdIO], ViolationAction::Errno(999)).unwrap();
+        let prog = promises_to_prog(vec![StdIO], Violation::Errno(999)).unwrap();
         let sc_data = syscall(libc::SYS_personality, [0;6]);
 
         let ret = run_seccomp(&prog, sc_data).unwrap();
@@ -1035,7 +1035,7 @@ mod tests {
 
     #[test_log::test]
     fn stdio_personality_killed() {
-        let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
+        let prog = promises_to_prog(vec![StdIO], Violation::KillProcess).unwrap();
         let sc_data = syscall(libc::SYS_personality, [0;6]);
 
         let ret = run_seccomp(&prog, sc_data).unwrap();
@@ -1046,7 +1046,7 @@ mod tests {
 
     #[test_log::test]
     fn stdio_time_ok() {
-        let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
+        let prog = promises_to_prog(vec![StdIO], Violation::KillProcess).unwrap();
         let sc_data = syscall(libc::SYS_gettimeofday, [0;6]);
 
         let ret = run_seccomp(&prog, sc_data).unwrap();
@@ -1058,7 +1058,7 @@ mod tests {
     #[test_log::test]
     fn rust_file_open() {
         // openat(AT_FDCWD, "file.txt", O_WRONLY|O_CREAT|O_CLOEXEC, 0666) = 257
-        let prog = promises_to_prog(vec![StdIO, CPath], ViolationAction::KillProcess).unwrap();
+        let prog = promises_to_prog(vec![StdIO, CPath], Violation::KillProcess).unwrap();
 
         let sc_data = syscall(libc::SYS_openat, [0, 0, (libc::O_WRONLY | libc::O_CREAT | libc::O_CLOEXEC) as u64, 0o666, 0, 0]);
         let ret = run_seccomp(&prog, sc_data).unwrap();
@@ -1067,7 +1067,7 @@ mod tests {
 
     #[test_log::test]
     fn fcntl_stdio() {
-        let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
+        let prog = promises_to_prog(vec![StdIO], Violation::KillProcess).unwrap();
 
         let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_DUPFD_CLOEXEC as u64, 0, 0, 0, 0]);
         let ret = run_seccomp(&prog, sc_data).unwrap();
@@ -1086,7 +1086,7 @@ mod tests {
     #[test_log::test]
     fn no_fcntl_lock() {
         let prog = promises_to_prog(vec![StdIO, CPath],
-                                    ViolationAction::KillProcess).unwrap();
+                                    Violation::KillProcess).unwrap();
         let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_GETLK as u64, 0, 0, 0, 0]);
 
         let ret = run_seccomp(&prog, sc_data).unwrap();
@@ -1096,7 +1096,7 @@ mod tests {
 
     #[test_log::test]
     fn sendto_addr() {
-        let prog = promises_to_prog(vec![StdIO], ViolationAction::KillProcess).unwrap();
+        let prog = promises_to_prog(vec![StdIO], Violation::KillProcess).unwrap();
 
         let sc_data = syscall(libc::SYS_sendto, [0, 0, 0, 0, !0, 0]);
         let ret = run_seccomp(&prog, sc_data).unwrap();
@@ -1118,7 +1118,7 @@ mod tests {
     #[test_log::test]
     fn fcntl_lock_ok() {
         let prog = promises_to_prog(vec![StdIO, CPath, FLock],
-                                    ViolationAction::KillProcess).unwrap();
+                                    Violation::KillProcess).unwrap();
         let sc_data = syscall(libc::SYS_fcntl, [42, libc::F_GETLK as u64, 0, 0, 0, 0]);
 
         let ret = run_seccomp(&prog, sc_data).unwrap();
@@ -1128,7 +1128,7 @@ mod tests {
 
     #[test_log::test]
     fn fcntl_socket_ok() {
-        let prog = promises_to_prog(vec![Inet], ViolationAction::KillProcess).unwrap();
+        let prog = promises_to_prog(vec![Inet], Violation::KillProcess).unwrap();
         let sc_data = syscall(libc::SYS_socket, [
             libc::AF_INET as u64,
             (libc::SOCK_STREAM | libc::SOCK_NONBLOCK) as u64,

@@ -27,5 +27,5 @@ pub use errors::Error;
 pub use errors::Result;
 
 use bpfvm::seccomp::SeccompReturn;
-pub type ViolationAction = SeccompReturn;
+pub type Violation = SeccompReturn;
 

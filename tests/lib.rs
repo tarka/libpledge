@@ -26,12 +26,12 @@ use std::{
 
 use libc;
 use nix::sys::signal::Signal;
-use oath::{pledge, pledge_override, Promise::*, ViolationAction};
+use libpledge::{pledge, pledge_override, Promise::*, Violation};
 
 #[test]
 fn stdio_personality_errno() {
     fork_expect_code(0, || {
-        pledge_override(vec![StdIO], ViolationAction::Errno(999)).unwrap();
+        pledge_override(vec![StdIO], Violation::Errno(999)).unwrap();
 
         let ret = unsafe { libc::personality(0xffffffff) };
         let errno = std::io::Error::last_os_error().raw_os_error().unwrap();
