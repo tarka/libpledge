@@ -11,7 +11,6 @@ authors = ["Steve Smith <tarkasteve@gmail.com>"]
 homepage = "https://github.com/tarka/libpledge/"
 repository = "https://github.com/tarka/libpledge/"
 license = "ISC"
-license-file = "LICENSE"
 readme = "README.md"
 
 keywords = ["seccomp", "security", "bpf", "linux"]
