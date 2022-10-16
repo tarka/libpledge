@@ -1,14 +1,25 @@
 [package]
 name = "bpfvm"
+description = """
+bpfvm is a cBPF token 'assembler' and small BPF VM emulator. It is intended for producing more readable seccomp assembly and testing functionality before deployment.
+"""
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Steve Smith <tarkasteve@gmail.com>"]
+homepage = "https://github.com/tarka/libpledge/bpfvm/"
+repository = "https://github.com/tarka/libpledge/bpfvm/"
+license = "ISC"
+license-file = "LICENSE"
+readme = "README.md"
+
+keywords = ["bpf", "seccomp"]
+categories =["development-tools", "development-tools:testing"]
 
 [dependencies]
-libc = { version = "0.2.133", features = ["extra_traits"] }
+libc = { version = "0.2.135", features = ["extra_traits"] }
 log = "0.4.17"
-thiserror = "1.0.35"
+thiserror = "1.0.37"
 
 [dev-dependencies]
 env_logger = "0.9.1"

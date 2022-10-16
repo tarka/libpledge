@@ -1,7 +1,21 @@
 [package]
 name = "libpledge"
+description = """
+libpledge is a library that provides similar functionality to the
+OpenBSD pledge(2) functionality for Rust programs on Linux.
+"""
 version = "0.1.0"
 edition = "2021"
+
+authors = ["Steve Smith <tarkasteve@gmail.com>"]
+homepage = "https://github.com/tarka/libpledge/"
+repository = "https://github.com/tarka/libpledge/"
+license = "ISC"
+license-file = "LICENSE"
+readme = "README.md"
+
+keywords = ["seccomp", "security", "bpf", "linux"]
+categories =["os::linux-apis"]
 
 [workspace]
 members = [
@@ -10,9 +24,9 @@ members = [
 
 [dependencies]
 lazy_static = "1.4.0"
-libc = { version = "0.2.132", features = ["extra_traits"] }
+libc = { version = "0.2.135", features = ["extra_traits"] }
 bpfvm = { version = "0.1.0", path = "bpfvm" }
-thiserror = "1.0.35"
+thiserror = "1.0.37"
 
 [dev-dependencies]
 nix = "0.25.0"
