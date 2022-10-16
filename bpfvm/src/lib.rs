@@ -18,8 +18,10 @@
 pub mod asm;
 pub mod bpf;
 pub mod seccomp;
-pub mod vm;
 mod errors;
+
+#[cfg(feature = "vm")]
+pub mod vm;
 
 
 use libc::sock_filter;

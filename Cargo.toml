@@ -22,12 +22,13 @@ members = [
 ]
 
 [dependencies]
+bpfvm = { version = "0.1.0", path = "bpfvm", default-features = false }
 lazy_static = "1.4.0"
 libc = { version = "0.2.135", features = ["extra_traits"] }
-bpfvm = { version = "0.1.0", path = "bpfvm" }
 thiserror = "1.0.37"
 
 [dev-dependencies]
+bpfvm = { version = "0.1.0", path = "bpfvm" }
 nix = "0.25.0"
 log = "0.4.17"
 test-log = "0.2.11"

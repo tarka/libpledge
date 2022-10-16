@@ -15,6 +15,10 @@ readme = "README.md"
 keywords = ["bpf", "seccomp"]
 categories =["development-tools", "development-tools:testing"]
 
+[features]
+default = ["vm"]
+vm = []
+
 [dependencies]
 libc = { version = "0.2.135", features = ["extra_traits"] }
 log = "0.4.17"
