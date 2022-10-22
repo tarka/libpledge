@@ -941,11 +941,6 @@ fn pledge_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
 }
 
 
-pub fn pledge(promises: Vec<Promise>) -> Result<()> {
-    pledge_override(promises, Violation::KillProcess)
-}
-
-
 fn promises_to_prog(promises: Vec<Promise>, violation: Violation) -> Result<WhitelistFrag> {
     // Convert all promises into filter specs (lists of allowed
     // syscalls & params).
@@ -978,6 +973,9 @@ fn promises_to_prog(promises: Vec<Promise>, violation: Violation) -> Result<Whit
     Ok(prog)
 }
 
+pub fn pledge(promises: Vec<Promise>) -> Result<()> {
+    pledge_override(promises, Violation::KillProcess)
+}
 
 pub fn pledge_override(promises: Vec<Promise>, violation: Violation) -> Result<()> {
     // Coerce the sock_filter list into a C-like pointer. The kernel
