@@ -32,20 +32,52 @@ pub type WhitelistFrag = Vec<libc::sock_filter>;
 const __O_TMPFILE: i32 = 0o20000000;
 
 
+// Generate BPF boiler-plate. This does the standard syscall# matching
+// and adds a standard "NEXT_FILTER" target to all checks.
+//
+// Note the assumption that the syscall is always pre-loaded into the
+// acc (see bpf_header() and next macro arm). This saves us a load
+// instr in the common-case where we just check the syscall#.
 macro_rules! syscall_check {
+    ( $syscall:expr ) =>
+        ([
+            Jump(JEQ, $syscall as u32, None, Some("NEXT_FILTER")),
+            Return(Const, SeccompReturn::Allow.into()),
+            Label("NEXT_FILTER"),
+        ]);
     ( $syscall:expr, $($el:expr), *) =>
         ([
-            Load(ABS, Syscall.offset()),
             Jump(JEQ, $syscall as u32, None, Some("NEXT_FILTER")),
             $($el,)*
             Return(Const, SeccompReturn::Allow.into()),
             Label("NEXT_FILTER"),
+            // Assume accumulator is trashed.
+            Load(ABS, Syscall.offset()),
         ])
 }
 
+
+fn bpf_header() -> Result<WhitelistFrag> {
+    // FIXME: Move default promises here?
+    let asm = [
+        Load(ABS, Arch.offset()),
+        Jump(JEQ, AUDIT_ARCH_X86_64, Some("START"), None),
+        Return(Const, SeccompReturn::KillProcess.into()),
+        Label("START"),
+        Load(ABS, Syscall.offset()),
+    ];
+
+    Ok(compile(&asm)?)
+}
+
+fn bpf_footer(violation: Violation) -> Result<WhitelistFrag> {
+    let retval = violation.into();
+    let asm = [Return(Const, retval)];
+    Ok(compile(&asm)?)
+}
+
 fn whitelist_syscall(syscall: libc::c_long) -> Result<WhitelistFrag> {
-    // FIXME: Hack to simplify the macro. There's probably a better way.
-    let asm = syscall_check!(syscall,);
+    let asm = syscall_check!(syscall);
     Ok(compile(&asm)?)
 }
 
@@ -869,24 +901,6 @@ fn mmap_exec() -> Result<WhitelistFrag> {
 
         Return(Const, SeccompReturn::Allow.into())
     );
-    Ok(compile(&asm)?)
-}
-
-fn bpf_header() -> Result<WhitelistFrag> {
-    // FIXME: Move default promises here?
-    let asm = [
-        Load(ABS, Arch.offset()),
-        Jump(JEQ, AUDIT_ARCH_X86_64, Some("START"), None),
-        Return(Const, SeccompReturn::KillProcess.into()),
-        Label("START"),
-    ];
-
-    Ok(compile(&asm)?)
-}
-
-fn bpf_footer(violation: Violation) -> Result<WhitelistFrag> {
-    let retval = violation.into();
-    let asm = [Return(Const, retval)];
     Ok(compile(&asm)?)
 }
 
