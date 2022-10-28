@@ -15,6 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+mod asm;
 mod errors;
 mod promises;
 mod seccomp;
@@ -26,6 +27,5 @@ pub use seccomp::pledge_override;
 pub use errors::Error;
 pub use errors::Result;
 
-use bpfvm::seccomp::SeccompReturn;
+use seccomp::SeccompReturn;
 pub type Violation = SeccompReturn;
-

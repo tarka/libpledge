@@ -26,14 +26,10 @@ pub enum Error {
     InvalidInstructionCode(u16),
     #[error("Unsupported BPF Instruction; {0:?}.")]
     UnsupportedInstruction(u16),
-    #[error("Unsupported Return value; {0:?}.")]
-    UnsupportedReturn(u32),
     #[error("Unsupported ABS offset type.")]
     UnsupportedDataOffset,
     #[error("Unknown BPF Instruction; {0:?}.")]
     UnknownInstruction(u16),
-    #[error("Unknown label reference; {0:?}.")]
-    UnknownLabelReference(String),
     #[error(transparent)]
     DataConversionError(#[from] TryFromSliceError),
 }

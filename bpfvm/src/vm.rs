@@ -16,10 +16,10 @@
  */
 
 use libc::sock_filter;
-use log::{error, debug, info};
+use log::{debug, error, info};
 
 use crate::errors::{Error, Result};
-use crate::{BPFProg, RunData, bpf::BPF_A};
+use crate::{bpf::BPF_A, BPFProg, RunData};
 
 const MEMSIZE: usize = libc::BPF_MEMWORDS as usize;
 
@@ -324,7 +324,7 @@ mod tests {
     #[test_log::test]
     fn test_load_data() {
         let prog = vec![
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 1*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 1 * WORDS),
             bpf_stmt(libc::BPF_RET | BPF_A, 0),
         ];
         let mut vm = BpfVM::new(&prog).unwrap();
@@ -336,7 +336,7 @@ mod tests {
     #[test_log::test]
     fn test_alu_mask() {
         let prog = vec![
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 2*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 2 * WORDS),
             bpf_stmt(libc::BPF_ALU | libc::BPF_AND | libc::BPF_K, 0xF0),
             bpf_stmt(libc::BPF_RET | BPF_A, 0),
         ];
@@ -354,7 +354,7 @@ mod tests {
     #[test_log::test]
     fn test_alu_mul() {
         let prog = vec![
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 2*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 2 * WORDS),
             bpf_stmt(libc::BPF_ALU | libc::BPF_MUL | libc::BPF_K, 2),
             bpf_stmt(libc::BPF_RET | BPF_A, 0),
         ];
@@ -407,57 +407,57 @@ mod tests {
 
         let prog = vec![
             // NR
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 0*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 0 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 1, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 100),
             // arch
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 1*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 1 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 2, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 101),
             // inst_ptr
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 2*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 2 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 3, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 102),
             // args[0] = [0, 4]
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 3*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 3 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 0, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 103),
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 4*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 4 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 4, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 104),
             // args[0] = [0, 5]
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 5*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 5 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 0, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 105),
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 6*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 6 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 5, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 106),
             // args[0] = [0, 6]
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 7*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 7 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 0, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 107),
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 8*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 8 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 6, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 108),
             // args[0] = [0, 7]
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 9*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 9 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 0, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 109),
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 10*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 10 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 7, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 110),
             // args[0] = [0, 8]
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 11*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 11 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 0, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 111),
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 12*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 12 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 8, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 112),
             // args[0] = [0, 9]
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 13*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 13 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 0, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 113),
-            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 14*WORDS),
+            bpf_stmt(libc::BPF_LD | libc::BPF_ABS | libc::BPF_W, 14 * WORDS),
             bpf_jmp(libc::BPF_JMP | libc::BPF_JEQ, 9, 1, 0),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 114),
             bpf_stmt(libc::BPF_RET | libc::BPF_K, 0),

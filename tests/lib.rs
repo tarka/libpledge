@@ -19,14 +19,16 @@ mod util;
 use util::{fork_expect_code, fork_expect_sig, tmpfile};
 
 use std::{
+    ffi::CString,
     fs::File,
     io::{BufRead, BufReader, Write},
-    time::{SystemTime, UNIX_EPOCH}, ffi::CString, os::unix::{prelude::AsRawFd, net::UnixListener},
+    os::unix::{net::UnixListener, prelude::AsRawFd},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use libc;
-use nix::sys::signal::Signal;
 use libpledge::{pledge, pledge_override, Promise::*, Violation};
+use nix::sys::signal::Signal;
 
 #[test]
 fn stdio_personality_errno() {
@@ -164,7 +166,6 @@ fn dpath_mknod_ok() {
     });
 }
 
-
 #[test]
 fn fcntl_stdio() {
     fork_expect_code(99, || {
@@ -176,7 +177,6 @@ fn fcntl_stdio() {
         unsafe { libc::exit(99) };
     });
 }
-
 
 #[test]
 fn no_fcntl_lock() {
@@ -192,7 +192,6 @@ fn no_fcntl_lock() {
     });
 }
 
-
 #[test]
 fn fcntl_lock_ok() {
     fork_expect_code(99, || {
@@ -207,7 +206,6 @@ fn fcntl_lock_ok() {
     });
 }
 
-
 #[test]
 fn no_fattr() {
     fork_expect_sig(Signal::SIGSYS, || {
@@ -220,7 +218,6 @@ fn no_fattr() {
         unsafe { libc::exit(99) };
     });
 }
-
 
 #[test]
 fn fattr_ok() {

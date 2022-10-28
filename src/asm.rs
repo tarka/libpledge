@@ -17,10 +17,9 @@
 
 use std::collections::HashMap;
 
-use libc::sock_filter;
-use crate::bpf::*;
 use crate::errors::{Error, Result};
-
+use bpfvm::bpf::*;
+use libc::sock_filter;
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum Operation<'a> {
@@ -38,7 +37,6 @@ use Operation::*;
 
 type Program<'a> = [Operation<'a>];
 
-
 fn map_labels<'a>(prog: &'a Program) -> Result<HashMap<&'a str, usize>> {
     // FIXME: If I get bored, convert this to an iter workflow.
     let mut line = 0;
@@ -47,7 +45,7 @@ fn map_labels<'a>(prog: &'a Program) -> Result<HashMap<&'a str, usize>> {
         match op {
             Label(l) => {
                 labels.insert(l, line);
-            },
+            }
             _ => {
                 line += 1;
             }
@@ -58,29 +56,33 @@ fn map_labels<'a>(prog: &'a Program) -> Result<HashMap<&'a str, usize>> {
 }
 
 fn jmp_calc(labels: &HashMap<&str, usize>, label: &Option<&str>, curr: usize) -> Result<usize> {
-
     let jmp_off = match label {
         Some(l) => {
-            let off = labels.get(l)
+            let off = labels
+                .get(l)
                 .ok_or(Error::UnknownLabelReference(l.to_string()))?;
             *off - curr - 1
-        },
+        }
         None => 0,
     };
     Ok(jmp_off)
 }
 
-fn to_sock_filter(linenum: usize, op: &Operation, labels: &HashMap<&str, usize>) -> Result<sock_filter> {
+fn to_sock_filter(
+    linenum: usize,
+    op: &Operation,
+    labels: &HashMap<&str, usize>,
+) -> Result<sock_filter> {
     let sf = match op {
         JumpTo(l) => {
             let targetline = jmp_calc(labels, &Some(l), linenum)?;
             bpf_jmp(JmpOp::JA, targetline as u32, 0, 0)
-        },
+        }
         Jump(op, cmp, ltrue, lfalse) => {
             let lt = jmp_calc(labels, ltrue, linenum)?;
             let lf = jmp_calc(labels, lfalse, linenum)?;
             bpf_jmp(*op, *cmp, lt as u8, lf as u8)
-        },
+        }
         Load(mode, val) => bpf_ld(*mode, *val),
         LoadIdx(mode, val) => bpf_ldx(*mode, *val),
         Store(mode, val) => bpf_st(*mode, *val),
@@ -93,14 +95,14 @@ fn to_sock_filter(linenum: usize, op: &Operation, labels: &HashMap<&str, usize>)
     Ok(sf)
 }
 
-
 pub fn compile(prog: &Program) -> Result<Vec<sock_filter>> {
     let labels = map_labels(prog)?;
 
     // TODO: We should probably do forward-only jump checks,
     // etc. here.
 
-    let opcodes = prog.into_iter()
+    let opcodes = prog
+        .into_iter()
         .filter(|op| !matches!(op, Label(_)))
         .enumerate()
         .map(|(linenum, op)| to_sock_filter(linenum, op, &labels))
@@ -109,20 +111,21 @@ pub fn compile(prog: &Program) -> Result<Vec<sock_filter>> {
     opcodes
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bpfvm::vm::{any_to_data, BpfVM};
     use libc;
     use test_log;
-    use crate::vm::{any_to_data, BpfVM};
 
     #[test_log::test]
     fn test_simple_jump() {
         let asm = vec![
             JumpTo("FAIL"),
-            Label("OK"), Return(Src::Const, 0),
-            Label("FAIL"), Return(Src::Const, 99),
+            Label("OK"),
+            Return(Src::Const, 0),
+            Label("FAIL"),
+            Return(Src::Const, 99),
         ];
         let prog = compile(&asm).unwrap();
 
@@ -150,7 +153,6 @@ mod tests {
         let ret = vm.run(&data).unwrap();
         assert!(ret == 99);
     }
-
 
     // Complex case from Cosmopolitan pledge() impl:
     //
@@ -200,15 +202,14 @@ mod tests {
     #[ignore]
     #[test_log::test]
     fn test_cosmo_socket_filter() {
+        use crate::seccomp::FieldOffset::*;
         use JmpOp::*;
         use Mode::*;
         use Src::*;
-        use crate::seccomp::FieldOffset::*;
 
         let asm = vec![
             Load(ABS, Syscall.offset()),
             Jump(JEQ, libc::SYS_socket as u32, None, Some("REJECT")),
-
             // The family parameter of socket() must be one of:
             //
             //   - AF_INET  (0x02)
@@ -216,8 +217,12 @@ mod tests {
             //
             Load(ABS, ArgLower(0).offset()),
             Jump(JEQ, libc::AF_INET as u32, Some("Type_Check"), None),
-            Jump(JEQ, libc::AF_INET6 as u32, Some("Type_Check"), Some("REJECT")),
-
+            Jump(
+                JEQ,
+                libc::AF_INET6 as u32,
+                Some("Type_Check"),
+                Some("REJECT"),
+            ),
             // The type parameter of socket() will ignore:
             //
             //   - SOCK_CLOEXEC  (0x80000)
@@ -232,8 +237,12 @@ mod tests {
             Load(ABS, ArgLower(1).offset()),
             Alu(AluOp::AND, Const, !0x80800),
             Jump(JEQ, libc::SOCK_STREAM as u32, Some("Proto_Check"), None),
-            Jump(JEQ, libc::SOCK_DGRAM as u32, Some("Proto_Check"), Some("REJECT")),
-
+            Jump(
+                JEQ,
+                libc::SOCK_DGRAM as u32,
+                Some("Proto_Check"),
+                Some("REJECT"),
+            ),
             // The protocol parameter of socket() must be one of:
             //
             //   - 0
@@ -247,12 +256,9 @@ mod tests {
             Jump(JEQ, libc::IPPROTO_ICMP as u32, Some("ALLOW"), None),
             Jump(JEQ, libc::IPPROTO_TCP as u32, Some("ALLOW"), None),
             Jump(JEQ, libc::IPPROTO_UDP as u32, Some("ALLOW"), None),
-
             JumpTo("REJECT"),
-
             Label("ALLOW"),
             Return(Const, 0),
-
             Label("REJECT"),
             Return(Const, 99),
         ];
@@ -277,12 +283,13 @@ mod tests {
                 libc::AF_INET as u64,
                 (libc::SOCK_STREAM | libc::SOCK_NONBLOCK) as u64,
                 libc::IPPROTO_TCP as u64,
-                0, 0, 0
+                0,
+                0,
+                0,
             ],
         };
         let data = any_to_data(&sc_data);
         let ret = vm.run(&data).unwrap();
         assert!(ret == 0);
     }
-
 }

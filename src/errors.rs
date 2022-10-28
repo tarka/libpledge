@@ -15,10 +15,10 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+use crate::promises::Promise;
+use bpfvm;
 use std::result;
 use thiserror::Error;
-use bpfvm;
-use crate::promises::Promise;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -28,6 +28,10 @@ pub enum Error {
     SysErr(#[from] std::io::Error),
     #[error(transparent)]
     BPFErr(#[from] bpfvm::Error),
+    #[error("Unknown label reference; {0:?}.")]
+    UnknownLabelReference(String),
+    #[error("Unsupported Return value; {0:?}.")]
+    UnsupportedReturn(u32),
 }
 
 pub type Result<T> = result::Result<T, Error>;

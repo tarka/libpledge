@@ -15,18 +15,14 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-pub mod asm;
 pub mod bpf;
-pub mod seccomp;
 mod errors;
 
 #[cfg(feature = "vm")]
 pub mod vm;
-
 
 use libc::sock_filter;
 pub type BPFProg = Vec<sock_filter>;
 pub type RunData<'a> = &'a [u32];
 
 pub use errors::{Error, Result};
-
