@@ -5,7 +5,7 @@ description = """
 intended for testing cBPF functionality before deployment, e.g. seccomp BPF
 filters.
 """
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 authors = ["Steve Smith <tarkasteve@gmail.com>"]
