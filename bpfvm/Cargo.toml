@@ -15,7 +15,7 @@ license = "ISC"
 readme = "README.md"
 
 keywords = ["bpf", "seccomp"]
-categories =["development-tools", "development-tools:testing"]
+categories =["development-tools::testing", "network-programming"]
 
 [features]
 default = ["vm"]
