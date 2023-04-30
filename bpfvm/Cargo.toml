@@ -22,10 +22,10 @@ default = ["vm"]
 vm = []
 
 [dependencies]
-libc = { version = "0.2.135", features = ["extra_traits"] }
+libc = { version = "0.2.142", features = ["extra_traits"] }
 log = "0.4.17"
-thiserror = "1.0.37"
+thiserror = "1.0.40"
 
 [dev-dependencies]
-env_logger = "0.9.1"
+env_logger = "0.10.0"
 test-log = "0.2.11"
