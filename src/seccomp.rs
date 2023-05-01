@@ -905,7 +905,7 @@ fn mmap_exec() -> Result<WhitelistFrag> {
 }
 
 
-fn pledge_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
+fn filter_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     match filter {
         Whitelist(syscall) => whitelist_syscall(*syscall),
         FcntlStdio => fcntl_stdio(),
@@ -940,7 +940,6 @@ fn pledge_to_bpf(filter: &Filtered) -> Result<WhitelistFrag> {
     }
 }
 
-
 fn promises_to_prog(promises: Vec<Promise>, violation: Violation) -> Result<WhitelistFrag> {
     // Convert all promises into filter specs (lists of allowed
     // syscalls & params).
@@ -954,10 +953,16 @@ fn promises_to_prog(promises: Vec<Promise>, violation: Violation) -> Result<Whit
         .flatten()
         .collect::<Vec<&Filtered>>();
 
+    filters_to_prog(filters, violation)
+}
+
+// Converts a list of filters to a BPF program, adding appropriate
+// headers and footer fragments.
+fn filters_to_prog(filters: Vec<&Filtered>, violation: Violation) -> Result<WhitelistFrag> {
     // Convert filters to seccomp BPF
     let whitelist = filters
         .into_iter()
-        .map(pledge_to_bpf)
+        .map(filter_to_bpf)
         .collect::<Result<Vec<WhitelistFrag>>>()?;
 
     // Assemble parts
