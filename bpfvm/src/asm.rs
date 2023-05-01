@@ -176,7 +176,6 @@ mod tests {
     //   - IPPROTO_TCP  (0x06)
     //   - IPPROTO_UDP  (0x11)
     //
-    #[ignore]
     #[test_log::test]
     fn test_cosmo_socket_filter() {
         use JmpOp::*;
@@ -221,7 +220,7 @@ mod tests {
             //   - IPPROTO_UDP  (0x11)
             //
             Label("Proto_Check"),
-            Load(ABS, ArgLower(1).offset()),
+            Load(ABS, ArgLower(2).offset()),
             Jump(JEQ, 0, Some("ALLOW"), None),
             Jump(JEQ, libc::IPPROTO_ICMP as u32, Some("ALLOW"), None),
             Jump(JEQ, libc::IPPROTO_TCP as u32, Some("ALLOW"), None),
